@@ -986,7 +986,7 @@ with TAB_CONG:
                 except Exception as e:
                     st.error(f"No se pudieron actualizar observaciones: {e}")
 
-        # ---- Borrado masivo (solo admins)
+        # ---- Borrado masivo (solo admins) hola hoa hola
  
 # -------------------- Config (admins) --------------------
 with TAB_CFG:
