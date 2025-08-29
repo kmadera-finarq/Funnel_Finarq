@@ -178,14 +178,14 @@ if st.session_state.user is None:
     with st.form("login"):
         email = st.text_input("Correo", placeholder="tucorreo@empresa.com")
         pwd = st.text_input("Contraseña", type="password")
-        ok = st.form_submit_button("Entrar", use_container_width=True)
+        ok = st.form_submit_button("Entrar", width="stretch")
     if ok:
         login(email, pwd)
     st.stop()
 
 user = st.session_state.user
 st.sidebar.write(f"Usuario: **{user.email}**")
-if st.sidebar.button("Cerrar sesión", use_container_width=True):
+if st.sidebar.button("Cerrar sesión", width="stretch"):
     logout()
 
 ALIAS = user.email.split("@")[0]
@@ -433,7 +433,7 @@ if not ADMIN_FLAG_GLOBAL:
                 "Ingreso estimado (MXN) *",
                 min_value=0.0, step=100.0, format="%.2f", key="monto_estimado_form"
             )
-            ok = st.form_submit_button("Guardar", type="primary", use_container_width=True)
+            ok = st.form_submit_button("Guardar", type="primary", width="stretch")
 
         if ok:
             if (not cliente or not producto or not tipo_bau or not estatus
@@ -483,7 +483,7 @@ if not ADMIN_FLAG_GLOBAL:
                             created_str = str(created_at)
                     label = f"**{cliente_txt}** — {msg}  \n_(creada: {created_str})_"
                     checks[obs_id] = st.checkbox(label, key=f"obs_{obs_id}", value=False)
-                submit_done = st.form_submit_button("Marcar seleccionadas como realizadas ✅", use_container_width=True)
+                submit_done = st.form_submit_button("Marcar seleccionadas como realizadas ✅", width="stretch")
 
             if submit_done:
                 try:
@@ -530,7 +530,7 @@ if not ADMIN_FLAG_GLOBAL:
         )
 
         st.markdown("#### Historial")
-        st.dataframe(df_public_view(df_f), use_container_width=True)
+        st.dataframe(df_public_view(df_f), width="stretch")
 
         # Métricas (Clientes/Total)
         if df_f.empty:
@@ -634,7 +634,7 @@ if not ADMIN_FLAG_GLOBAL:
             # Eje Y con formato y pequeña separación superior
             fig.update_yaxes(tickprefix="$", separatethousands=True)
 
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
 
 
 
@@ -670,7 +670,7 @@ if not ADMIN_FLAG_GLOBAL:
             edited = st.data_editor(
                 df_view,
                 key="editor_mis_registros",
-                use_container_width=True,
+                width="stretch",
                 column_config={
                     "estatus": st.column_config.SelectboxColumn(
                         "Estatus",
@@ -689,7 +689,7 @@ if not ADMIN_FLAG_GLOBAL:
                 hide_index=True,
             )
 
-            if st.button("Guardar cambios de estatus", type="primary", use_container_width=True):
+            if st.button("Guardar cambios de estatus", type="primary", width="stretch"):
                 try:
                     # Mapas originales
                     src_status = {str(r["id"]): r["estatus"] for _, r in df_edit_src.iterrows()}
@@ -809,7 +809,7 @@ with TAB_CONG:
                     "Semáforo": light,
                 })
             df_resumen = pd.DataFrame(resumen_rows).sort_values("asesor")
-            st.dataframe(df_resumen, use_container_width=True)
+            st.dataframe(df_resumen, width="stretch")
 
         red_max, yellow_max = get_thresholds()
         st.caption(f"Semáforo: 🔴 ≤ {int(red_max*100)}%  |  🟡 ≤ {int(yellow_max*100)}%  |  🟢 > {int(yellow_max*100)}%")
@@ -838,7 +838,7 @@ with TAB_CONG:
             date_from=mes_cong, date_to_exclusive=mes_cong_fin,
             asesor=asesor_param, tipo_bau=tipo_param_det
         )
-        st.dataframe(df_public_view(df_det), use_container_width=True)
+        st.dataframe(df_public_view(df_det), width="stretch")
 
         # ===================== 📝 Crear observación por ASESOR =====================
         st.markdown("### 📝 Crear observación para un asesor")
@@ -922,7 +922,7 @@ with TAB_CONG:
                     "done": "Hecha",
                 }),
                 key="editor_obs_admin",
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
                 column_config={
                     "Creada": st.column_config.DatetimeColumn("Creada", disabled=True),
@@ -1001,7 +1001,7 @@ with TAB_CFG:
         red_pct = st.slider("Límite ROJO (≤)", min_value=0, max_value=50, value=int(cur_red*100), step=1, help="Porcentaje hasta el cual se muestra 🔴")
         yellow_pct = st.slider("Límite AMARILLO (≤)", min_value=red_pct, max_value=80, value=int(cur_yellow*100), step=1, help="Porcentaje hasta el cual se muestra 🟡 (por encima es 🟢)")
 
-        if st.button("Guardar umbrales", type="primary", use_container_width=False):
+        if st.button("Guardar umbrales", type="primary", width="content"):
             st.session_state.sem_red_max = red_pct / 100.0
             st.session_state.sem_yellow_max = yellow_pct / 100.0
             st.success(f"Umbrales actualizados: 🔴 ≤ {red_pct}% | 🟡 ≤ {yellow_pct}% | 🟢 > {yellow_pct}%")
