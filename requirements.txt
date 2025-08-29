@@ -1,0 +1,6 @@
+streamlit
+supabase
+pandas
+python-dateutil
+postgrest
+plotly

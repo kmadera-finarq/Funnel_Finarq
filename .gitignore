@@ -1,0 +1,14 @@
+# Entorno virtual
+.venv/
+env/
+
+# Compilados Python
+__pycache__/
+*.pyc
+
+# Archivos de sistema
+.DS_Store
+Thumbs.db
+
+# Secrets
+.streamlit/secrets.toml
