@@ -286,6 +286,27 @@ def load_capturas_filtered(
         limit=limit,
     )
 
+# --------- NEW: helper de borrado (DAO) ---------
+def delete_capturas_by_ids(ids: list[int]) -> bool:
+    """
+    Borra registros en capturas por lista de IDs (bigserial).
+    RLS garantiza que el asesor sólo pueda borrar sus propias filas (user_id = auth.uid()).
+    Devuelve True si no hubo error.
+    """
+    if not ids:
+        return True
+    _attach_postgrest_token_if_any()
+    def _call():
+        return supabase.table("capturas").delete().in_("id", ids).execute()
+    try:
+        _retry_on_jwt_expired(_call)
+        return True
+    except APIError as e:
+        st.error(f"No se pudieron borrar registros: {_format_api_error(e)}")
+    except Exception as e:
+        st.error(f"No se pudieron borrar registros: {e}")
+    return False
+
 # --------- Observaciones: DAO helpers ---------
 def _query_observaciones_for_user(pending_only: bool = True):
     _attach_postgrest_token_if_any()
@@ -558,7 +579,6 @@ if not ADMIN_FLAG_GLOBAL:
         c6.metric("Suma ingresos reales (MXN)", f"{sum_real:,.2f}")
 
         # ===== NUEVO: gráfica Estimado vs Real (mes seleccionado) =====
-        # ===== Gráfica de líneas (Plotly): Estimado vs Real por día (con opción acumulado) =====
         st.markdown("#### Estimado vs Real")
 
         if df_f.empty:
@@ -570,7 +590,6 @@ if not ADMIN_FLAG_GLOBAL:
             # Agregación diaria
             daily = dfg.groupby("fecha", as_index=True).agg(
                 estimado=("monto_estimado", "sum"),
-                # Real: tu regla original: contar real solo para filas con estatus Cliente
                 real=("monto_real", lambda s: dfg.loc[s.index].assign(
                     _ok=(dfg.loc[s.index, "estatus"] == "Cliente")
                 ).pipe(lambda t: t.loc[t["_ok"], "monto_real"].fillna(0).sum()))
@@ -591,18 +610,16 @@ if not ADMIN_FLAG_GLOBAL:
                 plot_df["estimado"] = plot_df["estimado"].cumsum()
                 plot_df["real"] = plot_df["real"].cumsum()
 
-            # ---------- Plotly: líneas bonitas
+            # ---------- Plotly: líneas
             fig = go.Figure()
-
             fig.add_trace(go.Scatter(
                 x=plot_df.index, y=plot_df["estimado"],
                 mode="lines+markers",
                 name="Estimado",
-                line=dict(width=3, shape="spline"),  # línea suave
+                line=dict(width=3, shape="spline"),
                 marker=dict(size=6),
                 hovertemplate="<b>%{x|%d-%b}</b><br>Estimado: $%{y:,.2f}<extra></extra>"
             ))
-
             fig.add_trace(go.Scatter(
                 x=plot_df.index, y=plot_df["real"],
                 mode="lines+markers",
@@ -611,8 +628,6 @@ if not ADMIN_FLAG_GLOBAL:
                 marker=dict(size=6),
                 hovertemplate="<b>%{x|%d-%b}</b><br>Real: $%{y:,.2f}<extra></extra>"
             ))
-
-            # Estética general
             fig.update_layout(
                 template="plotly_white",
                 title="Ingresos estimados vs reales",
@@ -623,22 +638,15 @@ if not ADMIN_FLAG_GLOBAL:
                 margin=dict(l=10, r=10, t=60, b=10),
                 height=420,
             )
-
-            # Eje X con rango del mes y slider/zoom cómodo
             fig.update_xaxes(
                 range=[mes_inicio, mes_fin_excl - timedelta(days=1)],
                 showgrid=False,
                 tickformat="%d-%b",
                 rangeslider=dict(visible=True)
             )
-            # Eje Y con formato y pequeña separación superior
             fig.update_yaxes(tickprefix="$", separatethousands=True)
-
             st.plotly_chart(fig, use_container_width=True)
 
-
-
-#######
         st.markdown("#### Clientes con solo acercamiento")
         if df_f.empty:
             st.write("—")
@@ -649,7 +657,7 @@ if not ADMIN_FLAG_GLOBAL:
             solo_acerc = max_status[max_status["estatus_rank"] == ESTATUS_ORDER["Acercamiento"]]["cliente"].tolist()
             st.write(", ".join(sorted(set(solo_acerc))) if solo_acerc else "—")
 
-        # ========= Edición de estatus por los asesores (con monto_real requerido si Cliente) =========
+        # ========= Edición de estatus + BORRADO por asesores =========
         st.markdown("#### Editar estatus de mis registros")
         if df_f.empty:
             st.write("—")
@@ -666,6 +674,9 @@ if not ADMIN_FLAG_GLOBAL:
                 "cliente","producto","tipo_bau","estatus","fecha","referenciador",
                 "monto_estimado","monto_real"
             ]]
+
+            # NUEVO: columna de selección para borrar
+            df_view["Borrar"] = False
 
             edited = st.data_editor(
                 df_view,
@@ -684,70 +695,109 @@ if not ADMIN_FLAG_GLOBAL:
                     "referenciador": st.column_config.TextColumn("Referenciador", disabled=True),
                     "monto_estimado": st.column_config.NumberColumn("Estimado (MXN)", disabled=True, format="%.2f"),
                     "monto_real": st.column_config.NumberColumn("Real (MXN)", step=100.0, format="%.2f"),
+                    "Borrar": st.column_config.CheckboxColumn("Borrar", help="Marca para eliminar este registro"),
                 },
                 disabled=["cliente","producto","tipo_bau","fecha","referenciador","monto_estimado"],
                 hide_index=True,
             )
 
-            if st.button("Guardar cambios de estatus", type="primary", use_container_width=True):
-                try:
-                    # Mapas originales
-                    src_status = {str(r["id"]): r["estatus"] for _, r in df_edit_src.iterrows()}
-                    src_real   = {str(r["id"]): r.get("monto_real") for _, r in df_edit_src.iterrows()}
+            col_save, col_del = st.columns([1,1])
 
-                    def _num_norm(x):
-                        try:
-                            return None if x is None or pd.isna(x) else float(x)
-                        except Exception:
-                            return None
+            # ----- Guardar cambios de estatus -----
+            with col_save:
+                if st.button("Guardar cambios de estatus", type="primary", use_container_width=True):
+                    try:
+                        # Mapas originales
+                        src_status = {str(r["id"]): r["estatus"] for _, r in df_edit_src.iterrows()}
+                        src_real   = {str(r["id"]): r.get("monto_real") for _, r in df_edit_src.iterrows()}
 
-                    changes = []      # [(id, dict_update)]
-                    invalid_rows = [] # [(id, reason)]
+                        def _num_norm(x):
+                            try:
+                                return None if x is None or pd.isna(x) else float(x)
+                            except Exception:
+                                return None
 
-                    for rid_str, row in edited.iterrows():
-                        new_status = row["estatus"]
-                        new_real_val = row.get("monto_real")
-                        old_status = src_status.get(str(rid_str))
-                        old_real   = src_real.get(str(rid_str))
+                        changes = []      # [(id, dict_update)]
+                        invalid_rows = [] # [(id, reason)]
 
-                        # Si queda en 'Cliente', exigir monto_real > 0
-                        if new_status == "Cliente":
-                            nr = _num_norm(new_real_val)
-                            if nr is None or nr <= 0:
-                                invalid_rows.append((rid_str, "Debes capturar el ingreso REAL (> 0)"))
-                                continue
+                        for rid_str, row in edited.iterrows():
+                            new_status = row["estatus"]
+                            new_real_val = row.get("monto_real")
+                            old_status = src_status.get(str(rid_str))
+                            old_real   = src_real.get(str(rid_str))
 
-                        # Detectar cambios
-                        upd = {}
-                        changed = False
-                        if old_status != new_status:
-                            upd["estatus"] = new_status
-                            changed = True
-                        if _num_norm(new_real_val) != _num_norm(old_real):
-                            upd["monto_real"] = _num_norm(new_real_val)
-                            changed = True
+                            # Si queda en 'Cliente', exigir monto_real > 0
+                            if new_status == "Cliente":
+                                nr = _num_norm(new_real_val)
+                                if nr is None or nr <= 0:
+                                    invalid_rows.append((rid_str, "Debes capturar el ingreso REAL (> 0)"))
+                                    continue
 
-                        if changed:
-                            changes.append((rid_str, upd))
+                            # Detectar cambios
+                            upd = {}
+                            changed = False
+                            if old_status != new_status:
+                                upd["estatus"] = new_status
+                                changed = True
+                            if _num_norm(new_real_val) != _num_norm(old_real):
+                                upd["monto_real"] = _num_norm(new_real_val)
+                                changed = True
 
-                    if invalid_rows:
-                        st.error("No se guardaron cambios. Revisa:")
-                        for rid, reason in invalid_rows:
-                            st.write(f"- ID {rid}: {reason}")
-                    elif not changes:
-                        st.info("No hay cambios por guardar.")
+                            if changed:
+                                changes.append((rid_str, upd))
+
+                        if invalid_rows:
+                            st.error("No se guardaron cambios. Revisa:")
+                            for rid, reason in invalid_rows:
+                                st.write(f"- ID {rid}: {reason}")
+                        elif not changes:
+                            st.info("No hay cambios por guardar.")
+                        else:
+                            for rid_str, upd in changes:
+                                def _call_upd():
+                                    return supabase.table("capturas").update(upd).eq("id", rid_str).execute()
+                                _retry_on_jwt_expired(_call_upd)
+                            st.success(f"Actualizados {len(changes)} registro(s).")
+                            st.session_state.capturas_cache_buster += 1
+                            st.rerun()
+                    except APIError as e:
+                        st.error(f"No se pudieron guardar los cambios: {_format_api_error(e)}")
+                    except Exception as e:
+                        st.error(f"No se pudieron guardar los cambios: {e}")
+
+            # ----- Borrar seleccionados -----
+            with col_del:
+                if st.button("Borrar seleccionados", type="secondary", use_container_width=True):
+                    # IDs marcados para borrar (índice es id_str)
+                    ids_to_delete_str = [rid for rid, row in edited.iterrows() if bool(row.get("Borrar", False))]
+                    if not ids_to_delete_str:
+                        st.info("No marcaste registros para borrar.")
                     else:
-                        for rid_str, upd in changes:
-                            def _call_upd():
-                                return supabase.table("capturas").update(upd).eq("id", rid_str).execute()
-                            _retry_on_jwt_expired(_call_upd)
-                        st.success(f"Actualizados {len(changes)} registro(s).")
-                        st.session_state.capturas_cache_buster += 1
-                        st.rerun()
-                except APIError as e:
-                    st.error(f"No se pudieron guardar los cambios: {_format_api_error(e)}")
-                except Exception as e:
-                    st.error(f"No se pudieron guardar los cambios: {e}")
+                        # Convertir a enteros (tu id es bigserial)
+                        try:
+                            ids_to_delete = [int(rid) for rid in ids_to_delete_str]
+                        except Exception:
+                            st.error("Error al interpretar IDs a borrar.")
+                            ids_to_delete = []
+
+                        if ids_to_delete:
+                            with st.modal("Confirmar eliminación"):
+                                st.warning(
+                                    f"Se eliminarán **{len(ids_to_delete)}** registro(s). "
+                                    "Esta acción **no** se puede deshacer."
+                                )
+                                c1, c2 = st.columns(2)
+                                with c1:
+                                    if st.button("Sí, borrar definitivamente", key="confirm_del"):
+                                        ok = delete_capturas_by_ids(ids_to_delete)
+                                        if ok:
+                                            st.success("Registro(s) eliminado(s).")
+                                            # Limpiar caches y refrescar para que el visor admin coincida
+                                            load_capturas_filtered.clear()
+                                            st.session_state.capturas_cache_buster += 1
+                                            st.rerun()
+                                with c2:
+                                    st.button("Cancelar", key="cancel_del")
 
 # -------------------- Conglomerado (admins) --------------------
 with TAB_CONG:
@@ -756,6 +806,12 @@ with TAB_CONG:
         st.info("Solo administradores pueden ver el visor.")
     else:
         st.subheader("Resumen por asesor")
+
+        # NEW: botón para refrescar rápidamente el visor
+        if st.button("🔁 Actualizar datos del visor", key="refresh_cong"):
+            load_capturas_filtered.clear()
+            st.session_state.capturas_cache_buster += 1
+            st.rerun()
 
         col1, col2 = st.columns([1,1])
         with col1:
