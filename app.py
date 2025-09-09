@@ -651,7 +651,7 @@ if not ADMIN_FLAG_GLOBAL:
             solo_acerc = max_status[max_status["estatus_rank"] == ESTATUS_ORDER["Acercamiento"]]["cliente"].tolist()
             st.write(", ".join(sorted(set(solo_acerc))) if solo_acerc else "—")
 
-        # ========= Edición de estatus + BORRADO por asesores (ID robusto) =========
+        # ========= Edición de estatus + BORRADO por asesores (ID robusto, sin perder filas) =========
         st.markdown("#### Editar estatus de mis registros")
         if df_f.empty:
             st.write("—")
@@ -662,15 +662,47 @@ if not ADMIN_FLAG_GLOBAL:
                     df_f[c] = pd.NA
             df_edit_src = df_f[cols_edit].copy()
 
-            # ---- Normalizar y fijar ID seguro ----
-            df_edit_src["id_int"] = pd.to_numeric(df_edit_src["id"], errors="coerce").astype("Int64")
-            df_edit_src = df_edit_src.dropna(subset=["id_int"])
-            df_edit_src["id_str"] = df_edit_src["id_int"].astype(str)
+            # ---- Normalizador de ID (no descarta filas) ----
+            import re
+            def _to_id_int(v):
+                """
+                Devuelve el ID como int si se puede (int, '23', '23.0', ' 23 ', etc.),
+                o None si no es resolvible.
+                """
+                if v is None or (isinstance(v, float) and pd.isna(v)):
+                    return None
+                # int directo
+                try:
+                    return int(v)
+                except Exception:
+                    pass
+                # float como '23.0'
+                try:
+                    return int(float(str(v).strip()))
+                except Exception:
+                    pass
+                # extraer dígitos principales por regex
+                m = re.search(r"\d+", str(v))
+                if m:
+                    try:
+                        return int(m.group(0))
+                    except Exception:
+                        return None
+                return None
 
-            # Map id_str -> id_int real
-            id_map = df_edit_src.set_index("id_str")["id_int"].to_dict()
+            # No tiramos filas: creamos columnas auxiliares
+            df_edit_src["id_int"] = df_edit_src["id"].apply(_to_id_int)
+            # id_str para index del editor (si no resolvible, usamos un índice de fila)
+            df_edit_src = df_edit_src.reset_index(drop=False).rename(columns={"index": "_row"})
+            df_edit_src["id_str"] = df_edit_src.apply(
+                lambda r: str(r["id_int"]) if pd.notna(r["id_int"]) and r["id_int"] is not None else f"row_{r['_row']}",
+                axis=1
+            )
 
-            # Construir vista para el editor
+            # Mapa solo para los IDs resolvibles (para update/delete)
+            id_map = {str(r["id_int"]): int(r["id_int"]) for _, r in df_edit_src.iterrows() if pd.notna(r["id_int"]) and r["id_int"] is not None}
+
+            # Construir vista para el editor (sin perder filas)
             df_view = df_edit_src.set_index("id_str")[[
                 "cliente","producto","tipo_bau","estatus","fecha","referenciador",
                 "monto_estimado","monto_real"
@@ -708,9 +740,13 @@ if not ADMIN_FLAG_GLOBAL:
             with col_save:
                 if st.button("Guardar cambios de estatus", type="primary", use_container_width=True):
                     try:
-                        # Mapas originales (keys en id_str)
-                        src_status = {str(r["id_int"]): r["estatus"] for _, r in df_edit_src.iterrows()}
-                        src_real   = {str(r["id_int"]): r.get("monto_real") for _, r in df_edit_src.iterrows()}
+                        # Diccionarios de base usando la misma lógica de id_str
+                        src_status = {}
+                        src_real = {}
+                        for _, r in df_edit_src.iterrows():
+                            key = str(r["id_int"]) if pd.notna(r["id_int"]) and r["id_int"] is not None else f"row_{r['_row']}"
+                            src_status[key] = r["estatus"]
+                            src_real[key] = r.get("monto_real")
 
                         def _num_norm(x):
                             try:
@@ -722,15 +758,16 @@ if not ADMIN_FLAG_GLOBAL:
                         invalid_rows = [] # [(id_str, reason)]
 
                         for rid_str, row in edited.iterrows():
+                            # Solo actualizamos si el id es resolvible
                             rid_int = id_map.get(rid_str)
-                            if pd.isna(rid_int):
-                                invalid_rows.append((rid_str, "ID inválido"))
+                            if rid_int is None:
+                                invalid_rows.append((rid_str, "ID no resolvible (no se puede actualizar esta fila)."))
                                 continue
 
                             new_status = row["estatus"]
                             new_real_val = row.get("monto_real")
-                            old_status = src_status.get(rid_str)
-                            old_real   = src_real.get(rid_str)
+                            old_status = src_status.get(rid_str, None)
+                            old_real   = src_real.get(rid_str, None)
 
                             # Si queda en 'Cliente', exigir monto_real > 0
                             if new_status == "Cliente":
@@ -750,20 +787,21 @@ if not ADMIN_FLAG_GLOBAL:
                                 changed = True
 
                             if changed:
-                                changes.append((int(rid_int), upd))
+                                changes.append((rid_int, upd))
 
                         if invalid_rows:
-                            st.error("No se guardaron cambios. Revisa:")
+                            st.warning("Algunas filas no se pudieron procesar:")
                             for rid, reason in invalid_rows:
-                                st.write(f"- ID {rid}: {reason}")
-                        elif not changes:
-                            st.info("No hay cambios por guardar.")
+                                st.write(f"- {rid}: {reason}")
+
+                        if not changes:
+                            st.info("No hay cambios por guardar en filas válidas.")
                         else:
                             for rid_int, upd in changes:
                                 def _call_upd():
                                     return supabase.table("capturas").update(upd).eq("id", rid_int).execute()
                                 _retry_on_jwt_expired(_call_upd)
-                            st.success(f"Actualizados {len(changes)} registro(s).")
+                            st.success(f"Actualizados {len(changes)} registro(s) con ID válido.")
                             st.session_state.capturas_cache_buster += 1
                             st.rerun()
                     except APIError as e:
@@ -778,10 +816,10 @@ if not ADMIN_FLAG_GLOBAL:
                     if not ids_to_delete_str:
                         st.info("No marcaste registros para borrar.")
                     else:
-                        # Resolver a enteros con el mapa seguro
-                        ids_to_delete = [int(id_map[rid]) for rid in ids_to_delete_str if rid in id_map and pd.notna(id_map[rid])]
+                        # Mantener solo los que tengan ID resolvible
+                        ids_to_delete = [id_map[rid] for rid in ids_to_delete_str if rid in id_map]
                         if not ids_to_delete:
-                            st.error("No pude resolver los IDs seleccionados. Recarga la página e inténtalo de nuevo.")
+                            st.error("Ninguno de los seleccionados tiene ID válido para borrar.")
                         else:
                             with st.modal("Confirmar eliminación"):
                                 st.warning(
@@ -799,6 +837,7 @@ if not ADMIN_FLAG_GLOBAL:
                                             st.rerun()
                                 with c2:
                                     st.button("Cancelar", key="cancel_del")
+
 
 # -------------------- Conglomerado (admins) --------------------
 with TAB_CONG:
