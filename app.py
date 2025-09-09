@@ -6,7 +6,7 @@ from datetime import date, datetime, timedelta
 from dateutil.relativedelta import relativedelta
 from postgrest.exceptions import APIError
 import plotly.graph_objects as go
-import plotly.express as px  # opcional, pero útil para templates
+import plotly.express as px  # opcional para templates
 
 
 # -----------------------------------------------------------------------------
@@ -31,17 +31,26 @@ def get_supabase() -> Client:
 supabase: Client = get_supabase()
 
 # -----------------------------------------------------------------------------
-# Auth state + cache buster + umbrales
+# Auth state + cache busters + flags
 # -----------------------------------------------------------------------------
 if "session" not in st.session_state:
     st.session_state.session = None
 if "user" not in st.session_state:
     st.session_state.user = None
+
 # cache busters
 if "capturas_cache_buster" not in st.session_state:
     st.session_state.capturas_cache_buster = 0
 if "obs_cache_buster" not in st.session_state:
     st.session_state.obs_cache_buster = 0
+
+# flags de confirmación/lock para borrado (sin st.modal)
+if "ask_confirm_del" not in st.session_state:
+    st.session_state.ask_confirm_del = False
+if "del_ids" not in st.session_state:
+    st.session_state.del_ids = []
+if "delete_busy" not in st.session_state:
+    st.session_state.delete_busy = False
 
 # Umbrales semáforo (Clientes/Total)
 if "sem_red_max" not in st.session_state:
@@ -238,8 +247,7 @@ def _query_capturas(
     if not df.empty:
         required_cols = [
             "id","fecha","referenciador","cliente","producto","tipo_bau",
-            "estatus","asesor","ts","user_id",
-            "monto_estimado","monto_real"
+            "estatus","asesor","ts","user_id","monto_estimado","monto_real"
         ]
         for c in required_cols:
             if c not in df.columns:
@@ -285,13 +293,8 @@ def load_capturas_filtered(
         limit=limit,
     )
 
-# --------- NEW: helper de borrado (DAO) ---------
+# --------- Borrado (DAO) ---------
 def delete_capturas_by_ids(ids: list[int]) -> bool:
-    """
-    Borra registros en capturas por lista de IDs (bigserial).
-    RLS garantiza que el asesor sólo pueda borrar sus propias filas (user_id = auth.uid()).
-    Devuelve True si no hubo error.
-    """
     if not ids:
         return True
     _attach_postgrest_token_if_any()
@@ -334,17 +337,9 @@ def _query_observaciones_admin(date_from=None, date_to_exclusive=None, asesor_us
     return pd.DataFrame(res.data or [])
 
 def _get_asesores_map(limit: int = 10000):
-    """
-    Devuelve dict {alias_asesor -> user_id} usando capturas recientes (ts desc).
-    Garantiza alias únicos tomando el user_id más reciente visto.
-    """
     _attach_postgrest_token_if_any()
     def _call():
-        return supabase.table("capturas") \
-            .select("asesor,user_id,ts") \
-            .order("ts", desc=True) \
-            .limit(limit) \
-            .execute()
+        return supabase.table("capturas").select("asesor,user_id,ts").order("ts", desc=True).limit(limit).execute()
     res = _retry_on_jwt_expired(_call)
     ases_map = {}
     rows = res.data or []
@@ -382,8 +377,7 @@ def conversion_closed_over_total(total_reg: int, clientes: int):
 
 # ---- Vista pública para tablas simples ----
 DISPLAY_COLS = [
-    "cliente","producto","tipo_bau","estatus","fecha","referenciador",
-    "monto_estimado","monto_real"
+    "cliente","producto","tipo_bau","estatus","fecha","referenciador","monto_estimado","monto_real"
 ]
 def df_public_view(df: pd.DataFrame) -> pd.DataFrame:
     if df is None or df.empty:
@@ -415,7 +409,6 @@ if not ADMIN_FLAG_GLOBAL:
     with TAB_INDIV:
         st.subheader("Captura de registro")
 
-        # ✅ Lista de productos (catalogada, con respaldo si está vacío)
         @st.cache_data(ttl=60)
         def load_productos():
             try:
@@ -431,9 +424,8 @@ if not ADMIN_FLAG_GLOBAL:
         productos = load_productos()
 
         REFERENCIADORES = [
-            "Andrea", "Ángel", "Angie", "Ariadna", "César", "Cornelio", "Eduardo",
-            "Gilberto", "Jorge", "Karen", "Lupita", "Mafer", "Marco",
-            "Paco", "Pepe", "Ricardo", "Vania", "Ximena",
+            "Andrea","Ángel","Angie","Ariadna","César","Cornelio","Eduardo",
+            "Gilberto","Jorge","Karen","Lupita","Mafer","Marco","Paco","Pepe","Ricardo","Vania","Ximena",
         ]
 
         with st.form("form_lead_simple", clear_on_submit=True):
@@ -448,11 +440,7 @@ if not ADMIN_FLAG_GLOBAL:
             producto = st.selectbox("Producto *", productos)
             tipo_bau = st.selectbox("Tipo de cliente *", ["Nuevo","BAU"])
             estatus = st.selectbox("Estatus *", ["Acercamiento","Propuesta","Documentación","Cliente"])
-            # ---- NUEVO: monto estimado
-            monto_estimado = st.number_input(
-                "Ingreso estimado (MXN) *",
-                min_value=0.0, step=100.0, format="%.2f", key="monto_estimado_form"
-            )
+            monto_estimado = st.number_input("Ingreso estimado (MXN) *", min_value=0.0, step=100.0, format="%.2f", key="monto_estimado_form")
             ok = st.form_submit_button("Guardar", type="primary", use_container_width=True)
 
         if ok:
@@ -481,7 +469,7 @@ if not ADMIN_FLAG_GLOBAL:
                 except Exception as e:
                     st.error(f"No se pudo guardar el registro: {e}")
 
-        # 🔔 Observaciones del admin (notificaciones)
+        # 🔔 Observaciones del admin
         st.markdown("### 🔔 Observaciones del administrador")
         df_obs = _query_observaciones_for_user(pending_only=True)
         if df_obs.empty:
@@ -551,7 +539,7 @@ if not ADMIN_FLAG_GLOBAL:
         st.markdown("#### Historial")
         st.dataframe(df_public_view(df_f), use_container_width=True)
 
-        # Métricas (Clientes/Total)
+        # Métricas
         if df_f.empty:
             total_reg = acerc = propuestas = docs = clientes = 0
         else:
@@ -568,76 +556,48 @@ if not ADMIN_FLAG_GLOBAL:
         c3.metric("Documentación", f"{docs}")
         c4.metric("Clientes", f"{clientes}")
 
-        # ===== NUEVO: métricas de montos por asesor =====
+        # Montos
         sum_est = float(df_f["monto_estimado"].fillna(0).sum()) if not df_f.empty else 0.0
         sum_real = float(df_f.loc[df_f["estatus"]=="Cliente","monto_real"].fillna(0).sum()) if not df_f.empty else 0.0
-
         c5, c6 = st.columns(2)
         c5.metric("Suma ingresos estimados (MXN)", f"{sum_est:,.2f}")
         c6.metric("Suma ingresos reales (MXN)", f"{sum_real:,.2f}")
 
-        # ===== NUEVO: gráfica Estimado vs Real (mes seleccionado) =====
+        # Gráfica
         st.markdown("#### Estimado vs Real")
-
         if df_f.empty:
             st.info("Sin datos para graficar en el periodo seleccionado.")
         else:
             dfg = df_f.copy()
             dfg["fecha"] = pd.to_datetime(dfg["fecha"], errors="coerce")
-
-            # Agregación diaria
             daily = dfg.groupby("fecha", as_index=True).agg(
                 estimado=("monto_estimado", "sum"),
                 real=("monto_real", lambda s: dfg.loc[s.index].assign(
                     _ok=(dfg.loc[s.index, "estatus"] == "Cliente")
                 ).pipe(lambda t: t.loc[t["_ok"], "monto_real"].fillna(0).sum()))
             )
-
             daily["estimado"] = pd.to_numeric(daily["estimado"], errors="coerce").fillna(0.0)
             daily["real"]     = pd.to_numeric(daily["real"], errors="coerce").fillna(0.0)
-
             full_idx = pd.date_range(start=mes_inicio, end=mes_fin_excl - timedelta(days=1), freq="D")
             daily = daily.reindex(full_idx, fill_value=0.0)
-
             acumular = st.checkbox("Mostrar acumulado", value=True, help="Activa para ver líneas acumuladas del mes.")
             plot_df = daily.copy()
             if acumular:
                 plot_df["estimado"] = plot_df["estimado"].cumsum()
                 plot_df["real"] = plot_df["real"].cumsum()
-
             fig = go.Figure()
-            fig.add_trace(go.Scatter(
-                x=plot_df.index, y=plot_df["estimado"],
-                mode="lines+markers",
-                name="Estimado",
-                line=dict(width=3, shape="spline"),
-                marker=dict(size=6),
-                hovertemplate="<b>%{x|%d-%b}</b><br>Estimado: $%{y:,.2f}<extra></extra>"
-            ))
-            fig.add_trace(go.Scatter(
-                x=plot_df.index, y=plot_df["real"],
-                mode="lines+markers",
-                name="Real",
-                line=dict(width=3, shape="spline"),
-                marker=dict(size=6),
-                hovertemplate="<b>%{x|%d-%b}</b><br>Real: $%{y:,.2f}<extra></extra>"
-            ))
-            fig.update_layout(
-                template="plotly_white",
-                title="Ingresos estimados vs reales",
-                xaxis_title="Fecha",
-                yaxis_title="MXN",
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
-                hovermode="x unified",
-                margin=dict(l=10, r=10, t=60, b=10),
-                height=420,
-            )
-            fig.update_xaxes(
-                range=[mes_inicio, mes_fin_excl - timedelta(days=1)],
-                showgrid=False,
-                tickformat="%d-%b",
-                rangeslider=dict(visible=True)
-            )
+            fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df["estimado"], mode="lines+markers", name="Estimado",
+                                     line=dict(width=3, shape="spline"), marker=dict(size=6),
+                                     hovertemplate="<b>%{x|%d-%b}</b><br>Estimado: $%{y:,.2f}<extra></extra>"))
+            fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df["real"], mode="lines+markers", name="Real",
+                                     line=dict(width=3, shape="spline"), marker=dict(size=6),
+                                     hovertemplate="<b>%{x|%d-%b}</b><br>Real: $%{y:,.2f}<extra></extra>"))
+            fig.update_layout(template="plotly_white", title="Ingresos estimados vs reales",
+                              xaxis_title="Fecha", yaxis_title="MXN",
+                              legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+                              hovermode="x unified", margin=dict(l=10, r=10, t=60, b=10), height=420)
+            fig.update_xaxes(range=[mes_inicio, mes_fin_excl - timedelta(days=1)], showgrid=False, tickformat="%d-%b",
+                             rangeslider=dict(visible=True))
             fig.update_yaxes(tickprefix="$", separatethousands=True)
             st.plotly_chart(fig, use_container_width=True)
 
@@ -651,7 +611,7 @@ if not ADMIN_FLAG_GLOBAL:
             solo_acerc = max_status[max_status["estatus_rank"] == ESTATUS_ORDER["Acercamiento"]]["cliente"].tolist()
             st.write(", ".join(sorted(set(solo_acerc))) if solo_acerc else "—")
 
-        # ========= Edición de estatus + BORRADO por asesores (ID robusto, sin perder filas) =========
+        # ========= Edición de estatus + BORRADO (ID robusto, sin perder filas) =========
         st.markdown("#### Editar estatus de mis registros")
         if df_f.empty:
             st.write("—")
@@ -662,26 +622,19 @@ if not ADMIN_FLAG_GLOBAL:
                     df_f[c] = pd.NA
             df_edit_src = df_f[cols_edit].copy()
 
-            # ---- Normalizador de ID (no descarta filas) ----
+            # Normalizador de ID (no descarta filas)
             import re
             def _to_id_int(v):
-                """
-                Devuelve el ID como int si se puede (int, '23', '23.0', ' 23 ', etc.),
-                o None si no es resolvible.
-                """
                 if v is None or (isinstance(v, float) and pd.isna(v)):
                     return None
-                # int directo
                 try:
                     return int(v)
                 except Exception:
                     pass
-                # float como '23.0'
                 try:
                     return int(float(str(v).strip()))
                 except Exception:
                     pass
-                # extraer dígitos principales por regex
                 m = re.search(r"\d+", str(v))
                 if m:
                     try:
@@ -690,25 +643,21 @@ if not ADMIN_FLAG_GLOBAL:
                         return None
                 return None
 
-            # No tiramos filas: creamos columnas auxiliares
             df_edit_src["id_int"] = df_edit_src["id"].apply(_to_id_int)
-            # id_str para index del editor (si no resolvible, usamos un índice de fila)
             df_edit_src = df_edit_src.reset_index(drop=False).rename(columns={"index": "_row"})
             df_edit_src["id_str"] = df_edit_src.apply(
                 lambda r: str(r["id_int"]) if pd.notna(r["id_int"]) and r["id_int"] is not None else f"row_{r['_row']}",
                 axis=1
             )
 
-            # Mapa solo para los IDs resolvibles (para update/delete)
-            id_map = {str(r["id_int"]): int(r["id_int"]) for _, r in df_edit_src.iterrows() if pd.notna(r["id_int"]) and r["id_int"] is not None}
+            # Mapa para IDs válidos
+            id_map = {str(r["id_int"]): int(r["id_int"]) for _, r in df_edit_src.iterrows()
+                      if pd.notna(r["id_int"]) and r["id_int"] is not None}
 
-            # Construir vista para el editor (sin perder filas)
+            # Vista del editor
             df_view = df_edit_src.set_index("id_str")[[
-                "cliente","producto","tipo_bau","estatus","fecha","referenciador",
-                "monto_estimado","monto_real"
+                "cliente","producto","tipo_bau","estatus","fecha","referenciador","monto_estimado","monto_real"
             ]]
-
-            # Columna para borrar
             df_view["Borrar"] = False
 
             edited = st.data_editor(
@@ -716,11 +665,8 @@ if not ADMIN_FLAG_GLOBAL:
                 key="editor_mis_registros",
                 use_container_width=True,
                 column_config={
-                    "estatus": st.column_config.SelectboxColumn(
-                        "Estatus",
-                        options=["Acercamiento","Propuesta","Documentación","Cliente"],
-                        required=True,
-                    ),
+                    "estatus": st.column_config.SelectboxColumn("Estatus",
+                        options=["Acercamiento","Propuesta","Documentación","Cliente"], required=True),
                     "cliente": st.column_config.TextColumn("Cliente", disabled=True),
                     "producto": st.column_config.TextColumn("Producto", disabled=True),
                     "tipo_bau": st.column_config.TextColumn("Tipo", disabled=True),
@@ -740,7 +686,6 @@ if not ADMIN_FLAG_GLOBAL:
             with col_save:
                 if st.button("Guardar cambios de estatus", type="primary", use_container_width=True):
                     try:
-                        # Diccionarios de base usando la misma lógica de id_str
                         src_status = {}
                         src_real = {}
                         for _, r in df_edit_src.iterrows():
@@ -758,7 +703,6 @@ if not ADMIN_FLAG_GLOBAL:
                         invalid_rows = [] # [(id_str, reason)]
 
                         for rid_str, row in edited.iterrows():
-                            # Solo actualizamos si el id es resolvible
                             rid_int = id_map.get(rid_str)
                             if rid_int is None:
                                 invalid_rows.append((rid_str, "ID no resolvible (no se puede actualizar esta fila)."))
@@ -769,14 +713,12 @@ if not ADMIN_FLAG_GLOBAL:
                             old_status = src_status.get(rid_str, None)
                             old_real   = src_real.get(rid_str, None)
 
-                            # Si queda en 'Cliente', exigir monto_real > 0
                             if new_status == "Cliente":
                                 nr = _num_norm(new_real_val)
                                 if nr is None or nr <= 0:
                                     invalid_rows.append((rid_str, "Debes capturar el ingreso REAL (> 0)"))
                                     continue
 
-                            # Detectar cambios
                             upd = {}
                             changed = False
                             if old_status != new_status:
@@ -809,35 +751,50 @@ if not ADMIN_FLAG_GLOBAL:
                     except Exception as e:
                         st.error(f"No se pudieron guardar los cambios: {e}")
 
-            # ----- Borrar seleccionados -----
+            # ----- Borrar seleccionados (sin st.modal, con confirmación y lock) -----
             with col_del:
-                if st.button("Borrar seleccionados", type="secondary", use_container_width=True):
+                if st.button("Borrar seleccionados", type="secondary", use_container_width=True, key="btn_del_sel"):
                     ids_to_delete_str = [rid for rid, row in edited.iterrows() if bool(row.get("Borrar", False))]
                     if not ids_to_delete_str:
                         st.info("No marcaste registros para borrar.")
                     else:
-                        # Mantener solo los que tengan ID resolvible
-                        ids_to_delete = [id_map[rid] for rid in ids_to_delete_str if rid in id_map]
+                        ids_to_delete = [int(id_map[rid]) for rid in ids_to_delete_str if rid in id_map]
                         if not ids_to_delete:
                             st.error("Ninguno de los seleccionados tiene ID válido para borrar.")
                         else:
-                            with st.modal("Confirmar eliminación"):
-                                st.warning(
-                                    f"Se eliminarán **{len(ids_to_delete)}** registro(s). "
-                                    "Esta acción **no** se puede deshacer."
-                                )
-                                c1, c2 = st.columns(2)
-                                with c1:
-                                    if st.button("Sí, borrar definitivamente", key="confirm_del"):
-                                        ok = delete_capturas_by_ids(ids_to_delete)
-                                        if ok:
-                                            st.success("Registro(s) eliminado(s).")
-                                            load_capturas_filtered.clear()
-                                            st.session_state.capturas_cache_buster += 1
-                                            st.rerun()
-                                with c2:
-                                    st.button("Cancelar", key="cancel_del")
+                            st.session_state.del_ids = ids_to_delete
+                            st.session_state.ask_confirm_del = True
 
+                if st.session_state.get("ask_confirm_del", False):
+                    ids_preview = st.session_state.get("del_ids", [])
+                    st.warning(
+                        f"Se eliminarán **{len(ids_preview)}** registro(s). "
+                        "Esta acción **no** se puede deshacer."
+                    )
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        if st.button(
+                            "Sí, borrar definitivamente",
+                            key="confirm_del_now",
+                            use_container_width=True,
+                            disabled=st.session_state.delete_busy
+                        ):
+                            st.session_state.delete_busy = True
+                            with st.spinner("Borrando..."):
+                                ok = delete_capturas_by_ids(ids_preview)
+                            st.session_state.delete_busy = False
+                            st.session_state.ask_confirm_del = False
+                            st.session_state.del_ids = []
+                            if ok:
+                                st.success("Registro(s) eliminado(s).")
+                                load_capturas_filtered.clear()
+                                st.session_state.capturas_cache_buster += 1
+                                st.rerun()
+                    with c2:
+                        if st.button("Cancelar", key="cancel_del_now", use_container_width=True):
+                            st.session_state.ask_confirm_del = False
+                            st.session_state.del_ids = []
+                            st.info("Borrado cancelado.")
 
 # -------------------- Conglomerado (admins) --------------------
 with TAB_CONG:
@@ -847,7 +804,6 @@ with TAB_CONG:
     else:
         st.subheader("Resumen por asesor")
 
-        # NEW: botón para refrescar rápidamente el visor
         if st.button("🔁 Actualizar datos del visor", key="refresh_cong"):
             load_capturas_filtered.clear()
             st.session_state.capturas_cache_buster += 1
@@ -863,7 +819,6 @@ with TAB_CONG:
         mes_cong_fin = mes_cong + relativedelta(months=1)
         tipo_cong_param = None if tipo_cong == "Todos" else tipo_cong
 
-        # Cargar mes (todos los asesores)
         df_month = load_capturas_filtered(
             st.session_state.capturas_cache_buster,
             uid=st.session_state.user.id, is_admin_flag=ADMIN_FLAG, scope="all",
@@ -871,7 +826,6 @@ with TAB_CONG:
             tipo_bau=tipo_cong_param
         )
 
-        # ---- Resumen por asesor
         st.markdown("### Resumen por asesor")
         if df_month.empty:
             st.write("Sin datos para el filtro.")
@@ -888,10 +842,8 @@ with TAB_CONG:
                 d  = int((chunk["estatus"] == "Documentación").sum())
                 c  = int((chunk["estatus"] == "Cliente").sum())
                 conv_pct, light = conversion_closed_over_total(total_reg, c)
-
                 sum_est = float(chunk["monto_estimado"].fillna(0).sum())
                 sum_real = float(chunk.loc[chunk["estatus"]=="Cliente","monto_real"].fillna(0).sum())
-
                 resumen_rows.append({
                     "asesor": (ases if ases is not pd.NA and ases is not None else "—"),
                     "Total": total_reg,
@@ -910,7 +862,6 @@ with TAB_CONG:
         red_max, yellow_max = get_thresholds()
         st.caption(f"Semáforo: 🔴 ≤ {int(red_max*100)}%  |  🟡 ≤ {int(yellow_max*100)}%  |  🟢 > {int(yellow_max*100)}%")
 
-        # ---- Registros por asesor (con 'Todos')
         st.markdown("### Registros por asesor")
         if not df_month.empty and "asesor" in df_month.columns:
             asesores_base = sorted(df_month["asesor"].dropna().unique().tolist())
@@ -936,9 +887,9 @@ with TAB_CONG:
         )
         st.dataframe(df_public_view(df_det), use_container_width=True)
 
-        # ===================== 📝 Crear observación por ASESOR =====================
+        # ===================== 📝 Observaciones (admin) =====================
         st.markdown("### 📝 Crear observación para un asesor")
-        ases_map = _get_asesores_map()  # {alias -> user_id} desde capturas recientes
+        ases_map = _get_asesores_map()
         asesores_select = sorted(list(ases_map.keys()))
         if not asesores_select:
             st.info("No hay asesores detectados en capturas para crear observaciones.")
@@ -948,10 +899,8 @@ with TAB_CONG:
                 asesor_elegido = st.selectbox("Selecciona asesor", asesores_select, key="obs_asesor_admin")
             with col_a2:
                 cliente_rel = st.text_input("Relacionado con cliente (opcional)", placeholder="Ej. Alitas 23")
-
             obs_msg = st.text_area("Observación", placeholder="Ej. Llamar al cliente para confirmar documentación...")
             btn_obs = st.button("Agregar observación", type="primary")
-
             if btn_obs:
                 if not obs_msg.strip():
                     st.warning("Escribe una observación.")
@@ -975,7 +924,6 @@ with TAB_CONG:
                     except Exception as e:
                         st.error(f"No se pudo crear la observación: {e}")
 
-        # ===================== 📋 Observaciones (panel del administrador) =====================
         st.markdown("---")
         st.markdown("### 📋 Observaciones (panel del administrador)")
 
@@ -989,7 +937,7 @@ with TAB_CONG:
                 obs_to = st.date_input("Hasta (exclusivo)", value=date.today() + timedelta(days=1), key="obs_to")
         else:
             obs_from = default_from
-            obs_to = None  # sin to_exclusive
+            obs_to = None
 
         ases_map_all = _get_asesores_map()
         asesores_admin = ["Todos"] + sorted(list(ases_map_all.keys()))
@@ -1057,17 +1005,9 @@ with TAB_CONG:
                     else:
                         for oid, new_done in updates:
                             if new_done:
-                                payload = {
-                                    "done": True,
-                                    "done_at": datetime.utcnow().isoformat() + "Z",
-                                    "done_by_user_id": user.id
-                                }
+                                payload = {"done": True, "done_at": datetime.utcnow().isoformat() + "Z", "done_by_user_id": user.id}
                             else:
-                                payload = {
-                                    "done": False,
-                                    "done_at": None,
-                                    "done_by_user_id": None
-                                }
+                                payload = {"done": False, "done_at": None, "done_by_user_id": None}
                             def _upd():
                                 return supabase.table("observaciones").update(payload).eq("id", oid).execute()
                             _retry_on_jwt_expired(_upd)
@@ -1089,8 +1029,10 @@ with TAB_CFG:
         st.caption("Ajusta los umbrales de semáforo para la tasa Clientes/Total. Se guardan en esta sesión.")
 
         cur_red, cur_yellow = get_thresholds()
-        red_pct = st.slider("Límite ROJO (≤)", min_value=0, max_value=50, value=int(cur_red*100), step=1, help="Porcentaje hasta el cual se muestra 🔴")
-        yellow_pct = st.slider("Límite AMARILLO (≤)", min_value=red_pct, max_value=80, value=int(cur_yellow*100), step=1, help="Porcentaje hasta el cual se muestra 🟡 (por encima es 🟢)")
+        red_pct = st.slider("Límite ROJO (≤)", min_value=0, max_value=50, value=int(cur_red*100), step=1,
+                            help="Porcentaje hasta el cual se muestra 🔴")
+        yellow_pct = st.slider("Límite AMARILLO (≤)", min_value=red_pct, max_value=80, value=int(cur_yellow*100), step=1,
+                               help="Porcentaje hasta el cual se muestra 🟡 (por encima es 🟢)")
 
         if st.button("Guardar umbrales", type="primary", use_container_width=False):
             st.session_state.sem_red_max = red_pct / 100.0
