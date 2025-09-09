@@ -239,7 +239,7 @@ def _query_capturas(
         required_cols = [
             "id","fecha","referenciador","cliente","producto","tipo_bau",
             "estatus","asesor","ts","user_id",
-            "monto_estimado","monto_real"  # NUEVO
+            "monto_estimado","monto_real"
         ]
         for c in required_cols:
             if c not in df.columns:
@@ -248,7 +248,6 @@ def _query_capturas(
         for c in ("referenciador","cliente","producto","tipo_bau","estatus","asesor"):
             if df[c].dtype != object:
                 df[c] = df[c].astype("string")
-        # numéricos seguros
         for numc in ("monto_estimado","monto_real"):
             if numc not in df.columns:
                 df[numc] = pd.NA
@@ -469,9 +468,8 @@ if not ADMIN_FLAG_GLOBAL:
                     "producto": producto,
                     "tipo_bau": tipo_bau,
                     "estatus": estatus,
-                    "monto_estimado": float(monto_estimado),  # NUEVO
+                    "monto_estimado": float(monto_estimado),
                 }
-                # (Opcional) si quieres obligar 'monto_real' al crear en 'Cliente', añade inputs y validación aquí.
                 try:
                     def _call():
                         return supabase.table("capturas").insert(payload).execute()
@@ -595,22 +593,18 @@ if not ADMIN_FLAG_GLOBAL:
                 ).pipe(lambda t: t.loc[t["_ok"], "monto_real"].fillna(0).sum()))
             )
 
-            # El lambda anterior deja un número total por día; aseguremos tipo numérico
             daily["estimado"] = pd.to_numeric(daily["estimado"], errors="coerce").fillna(0.0)
             daily["real"]     = pd.to_numeric(daily["real"], errors="coerce").fillna(0.0)
 
-            # Rango completo del mes para continuidad de líneas
             full_idx = pd.date_range(start=mes_inicio, end=mes_fin_excl - timedelta(days=1), freq="D")
             daily = daily.reindex(full_idx, fill_value=0.0)
 
-            # Toggle acumulado
             acumular = st.checkbox("Mostrar acumulado", value=True, help="Activa para ver líneas acumuladas del mes.")
             plot_df = daily.copy()
             if acumular:
                 plot_df["estimado"] = plot_df["estimado"].cumsum()
                 plot_df["real"] = plot_df["real"].cumsum()
 
-            # ---------- Plotly: líneas
             fig = go.Figure()
             fig.add_trace(go.Scatter(
                 x=plot_df.index, y=plot_df["estimado"],
@@ -657,7 +651,7 @@ if not ADMIN_FLAG_GLOBAL:
             solo_acerc = max_status[max_status["estatus_rank"] == ESTATUS_ORDER["Acercamiento"]]["cliente"].tolist()
             st.write(", ".join(sorted(set(solo_acerc))) if solo_acerc else "—")
 
-        # ========= Edición de estatus + BORRADO por asesores =========
+        # ========= Edición de estatus + BORRADO por asesores (ID robusto) =========
         st.markdown("#### Editar estatus de mis registros")
         if df_f.empty:
             st.write("—")
@@ -668,14 +662,21 @@ if not ADMIN_FLAG_GLOBAL:
                     df_f[c] = pd.NA
             df_edit_src = df_f[cols_edit].copy()
 
-            # Usar ID como índice (oculto)
-            df_edit_src["id_str"] = df_edit_src["id"].astype(str)
+            # ---- Normalizar y fijar ID seguro ----
+            df_edit_src["id_int"] = pd.to_numeric(df_edit_src["id"], errors="coerce").astype("Int64")
+            df_edit_src = df_edit_src.dropna(subset=["id_int"])
+            df_edit_src["id_str"] = df_edit_src["id_int"].astype(str)
+
+            # Map id_str -> id_int real
+            id_map = df_edit_src.set_index("id_str")["id_int"].to_dict()
+
+            # Construir vista para el editor
             df_view = df_edit_src.set_index("id_str")[[
                 "cliente","producto","tipo_bau","estatus","fecha","referenciador",
                 "monto_estimado","monto_real"
             ]]
 
-            # NUEVO: columna de selección para borrar
+            # Columna para borrar
             df_view["Borrar"] = False
 
             edited = st.data_editor(
@@ -707,9 +708,9 @@ if not ADMIN_FLAG_GLOBAL:
             with col_save:
                 if st.button("Guardar cambios de estatus", type="primary", use_container_width=True):
                     try:
-                        # Mapas originales
-                        src_status = {str(r["id"]): r["estatus"] for _, r in df_edit_src.iterrows()}
-                        src_real   = {str(r["id"]): r.get("monto_real") for _, r in df_edit_src.iterrows()}
+                        # Mapas originales (keys en id_str)
+                        src_status = {str(r["id_int"]): r["estatus"] for _, r in df_edit_src.iterrows()}
+                        src_real   = {str(r["id_int"]): r.get("monto_real") for _, r in df_edit_src.iterrows()}
 
                         def _num_norm(x):
                             try:
@@ -717,14 +718,19 @@ if not ADMIN_FLAG_GLOBAL:
                             except Exception:
                                 return None
 
-                        changes = []      # [(id, dict_update)]
-                        invalid_rows = [] # [(id, reason)]
+                        changes = []      # [(id_int, dict_update)]
+                        invalid_rows = [] # [(id_str, reason)]
 
                         for rid_str, row in edited.iterrows():
+                            rid_int = id_map.get(rid_str)
+                            if pd.isna(rid_int):
+                                invalid_rows.append((rid_str, "ID inválido"))
+                                continue
+
                             new_status = row["estatus"]
                             new_real_val = row.get("monto_real")
-                            old_status = src_status.get(str(rid_str))
-                            old_real   = src_real.get(str(rid_str))
+                            old_status = src_status.get(rid_str)
+                            old_real   = src_real.get(rid_str)
 
                             # Si queda en 'Cliente', exigir monto_real > 0
                             if new_status == "Cliente":
@@ -744,7 +750,7 @@ if not ADMIN_FLAG_GLOBAL:
                                 changed = True
 
                             if changed:
-                                changes.append((rid_str, upd))
+                                changes.append((int(rid_int), upd))
 
                         if invalid_rows:
                             st.error("No se guardaron cambios. Revisa:")
@@ -753,9 +759,9 @@ if not ADMIN_FLAG_GLOBAL:
                         elif not changes:
                             st.info("No hay cambios por guardar.")
                         else:
-                            for rid_str, upd in changes:
+                            for rid_int, upd in changes:
                                 def _call_upd():
-                                    return supabase.table("capturas").update(upd).eq("id", rid_str).execute()
+                                    return supabase.table("capturas").update(upd).eq("id", rid_int).execute()
                                 _retry_on_jwt_expired(_call_upd)
                             st.success(f"Actualizados {len(changes)} registro(s).")
                             st.session_state.capturas_cache_buster += 1
@@ -768,19 +774,15 @@ if not ADMIN_FLAG_GLOBAL:
             # ----- Borrar seleccionados -----
             with col_del:
                 if st.button("Borrar seleccionados", type="secondary", use_container_width=True):
-                    # IDs marcados para borrar (índice es id_str)
                     ids_to_delete_str = [rid for rid, row in edited.iterrows() if bool(row.get("Borrar", False))]
                     if not ids_to_delete_str:
                         st.info("No marcaste registros para borrar.")
                     else:
-                        # Convertir a enteros (tu id es bigserial)
-                        try:
-                            ids_to_delete = [int(rid) for rid in ids_to_delete_str]
-                        except Exception:
-                            st.error("Error al interpretar IDs a borrar.")
-                            ids_to_delete = []
-
-                        if ids_to_delete:
+                        # Resolver a enteros con el mapa seguro
+                        ids_to_delete = [int(id_map[rid]) for rid in ids_to_delete_str if rid in id_map and pd.notna(id_map[rid])]
+                        if not ids_to_delete:
+                            st.error("No pude resolver los IDs seleccionados. Recarga la página e inténtalo de nuevo.")
+                        else:
                             with st.modal("Confirmar eliminación"):
                                 st.warning(
                                     f"Se eliminarán **{len(ids_to_delete)}** registro(s). "
@@ -792,7 +794,6 @@ if not ADMIN_FLAG_GLOBAL:
                                         ok = delete_capturas_by_ids(ids_to_delete)
                                         if ok:
                                             st.success("Registro(s) eliminado(s).")
-                                            # Limpiar caches y refrescar para que el visor admin coincida
                                             load_capturas_filtered.clear()
                                             st.session_state.capturas_cache_buster += 1
                                             st.rerun()
@@ -918,7 +919,7 @@ with TAB_CONG:
                 else:
                     try:
                         payload = {
-                            "captura_id_text": "general",         # no ligada a un registro concreto
+                            "captura_id_text": "general",
                             "asesor_user_id": ases_map[asesor_elegido],
                             "asesor_alias": asesor_elegido,
                             "cliente": (cliente_rel.strip() or None),
@@ -951,7 +952,6 @@ with TAB_CONG:
             obs_from = default_from
             obs_to = None  # sin to_exclusive
 
-        # Filtro por asesor (map con user_id)
         ases_map_all = _get_asesores_map()
         asesores_admin = ["Todos"] + sorted(list(ases_map_all.keys()))
         ases_fil = st.selectbox("Asesor", asesores_admin, key="obs_asesor_filtro")
@@ -962,7 +962,6 @@ with TAB_CONG:
         if df_obs_admin.empty:
             st.write("Sin observaciones para el criterio seleccionado.")
         else:
-            # Vista limpia: ocultamos ID internos
             df_obs_admin_ed = df_obs_admin.copy()
             df_obs_admin_ed = df_obs_admin_ed[[
                 "created_at","asesor_alias","cliente","mensaje","done"
@@ -989,7 +988,6 @@ with TAB_CONG:
                 }
             )
 
-            # Para detectar cambios, reconstruimos el id usando merge con df original por columnas visibles
             if st.button("Guardar cambios de observaciones", type="primary"):
                 try:
                     base = df_obs_admin[["id","created_at","asesor_alias","cliente","mensaje","done"]].copy()
@@ -1042,8 +1040,6 @@ with TAB_CONG:
                 except Exception as e:
                     st.error(f"No se pudieron actualizar observaciones: {e}")
 
-        # ---- Borrado masivo (solo admins) hola hoa hola
- 
 # -------------------- Config (admins) --------------------
 with TAB_CFG:
     ADMIN_FLAG = ADMIN_FLAG_GLOBAL
