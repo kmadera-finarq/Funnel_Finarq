@@ -7,7 +7,7 @@ from dateutil.relativedelta import relativedelta
 from postgrest.exceptions import APIError
 import plotly.graph_objects as go
 import plotly.express as px  # opcional para templates
-
+import re
 
 # -----------------------------------------------------------------------------
 # Config
@@ -247,7 +247,7 @@ def _query_capturas(
     if not df.empty:
         required_cols = [
             "id","fecha","referenciador","cliente","producto","tipo_bau",
-            "estatus","asesor","ts","user_id","monto_estimado","monto_real"
+            "estatus","asesor","ts","user_id","monto_estimado","monto_real","legacy_id"
         ]
         for c in required_cols:
             if c not in df.columns:
@@ -263,7 +263,7 @@ def _query_capturas(
     else:
         df = pd.DataFrame(columns=[
             "id","fecha","referenciador","cliente","producto","tipo_bau",
-            "estatus","asesor","ts","user_id","monto_estimado","monto_real"
+            "estatus","asesor","ts","user_id","monto_estimado","monto_real","legacy_id"
         ])
     return df
 
@@ -294,7 +294,7 @@ def load_capturas_filtered(
     )
 
 # --------- Borrado (DAO) ---------
-def delete_capturas_by_ids(ids: list[int]) -> bool:
+def delete_capturas_by_ids(ids: list[str]) -> bool:
     if not ids:
         return True
     _attach_postgrest_token_if_any()
@@ -611,51 +611,33 @@ if not ADMIN_FLAG_GLOBAL:
             solo_acerc = max_status[max_status["estatus_rank"] == ESTATUS_ORDER["Acercamiento"]]["cliente"].tolist()
             st.write(", ".join(sorted(set(solo_acerc))) if solo_acerc else "—")
 
-        # ========= Edición de estatus + BORRADO (ID robusto, sin perder filas) =========
+        # ========= Edición de estatus + BORRADO (IDs UUID seguros) =========
         st.markdown("#### Editar estatus de mis registros")
         if df_f.empty:
             st.write("—")
         else:
-            cols_edit = ["id","cliente","producto","tipo_bau","estatus","fecha","referenciador","monto_estimado","monto_real"]
+            cols_edit = ["id","cliente","producto","tipo_bau","estatus","fecha","referenciador","monto_estimado","monto_real","legacy_id"]
             for c in cols_edit:
                 if c not in df_f.columns:
                     df_f[c] = pd.NA
-            df_edit_src = df_f[cols_edit].copy()
+            df_edit_src = df_f[cols_edit].copy().reset_index(drop=True)
 
-            # Normalizador de ID (no descarta filas)
-            import re
-            def _to_id_int(v):
-                if v is None or (isinstance(v, float) and pd.isna(v)):
-                    return None
-                try:
-                    return int(v)
-                except Exception:
-                    pass
-                try:
-                    return int(float(str(v).strip()))
-                except Exception:
-                    pass
-                m = re.search(r"\d+", str(v))
-                if m:
-                    try:
-                        return int(m.group(0))
-                    except Exception:
-                        return None
-                return None
-
-            df_edit_src["id_int"] = df_edit_src["id"].apply(_to_id_int)
-            df_edit_src = df_edit_src.reset_index(drop=False).rename(columns={"index": "_row"})
-            df_edit_src["id_str"] = df_edit_src.apply(
-                lambda r: str(r["id_int"]) if pd.notna(r["id_int"]) and r["id_int"] is not None else f"row_{r['_row']}",
+            # ID crudo UUID (string). Si no hay, se usa row_key sintético.
+            df_edit_src["id_raw"] = df_edit_src["id"].astype("string")
+            df_edit_src["row_key"] = df_edit_src.apply(
+                lambda r: (r["id_raw"] if pd.notna(r["id_raw"]) and str(r["id_raw"]).strip() not in ("", "None")
+                           else f"row_{int(r.name)}"),
                 axis=1
             )
 
-            # Mapa para IDs válidos
-            id_map = {str(r["id_int"]): int(r["id_int"]) for _, r in df_edit_src.iterrows()
-                      if pd.notna(r["id_int"]) and r["id_int"] is not None}
+            # Mapa row_key -> UUID real
+            id_map = {}
+            for _, r in df_edit_src.iterrows():
+                rid = r.get("id_raw")
+                if pd.notna(rid) and str(rid).strip() not in ("", "None"):
+                    id_map[str(r["row_key"])] = str(rid)
 
-            # Vista del editor
-            df_view = df_edit_src.set_index("id_str")[[
+            df_view = df_edit_src.set_index("row_key")[[
                 "cliente","producto","tipo_bau","estatus","fecha","referenciador","monto_estimado","monto_real"
             ]]
             df_view["Borrar"] = False
@@ -686,12 +668,13 @@ if not ADMIN_FLAG_GLOBAL:
             with col_save:
                 if st.button("Guardar cambios de estatus", type="primary", use_container_width=True):
                     try:
+                        # Estado original por row_key
                         src_status = {}
                         src_real = {}
                         for _, r in df_edit_src.iterrows():
-                            key = str(r["id_int"]) if pd.notna(r["id_int"]) and r["id_int"] is not None else f"row_{r['_row']}"
+                            key = str(r["row_key"])
                             src_status[key] = r["estatus"]
-                            src_real[key] = r.get("monto_real")
+                            src_real[key]   = r.get("monto_real")
 
                         def _num_norm(x):
                             try:
@@ -699,24 +682,24 @@ if not ADMIN_FLAG_GLOBAL:
                             except Exception:
                                 return None
 
-                        changes = []      # [(id_int, dict_update)]
-                        invalid_rows = [] # [(id_str, reason)]
+                        changes = []      # [(uuid, dict_update)]
+                        invalid_rows = [] # [(row_key, reason)]
 
-                        for rid_str, row in edited.iterrows():
-                            rid_int = id_map.get(rid_str)
-                            if rid_int is None:
-                                invalid_rows.append((rid_str, "ID no resolvible (no se puede actualizar esta fila)."))
+                        for rid_key, row in edited.iterrows():
+                            rid_uuid = id_map.get(rid_key)
+                            if rid_uuid is None:
+                                invalid_rows.append((rid_key, "ID no resolvible (no se puede actualizar esta fila)."))
                                 continue
 
                             new_status = row["estatus"]
                             new_real_val = row.get("monto_real")
-                            old_status = src_status.get(rid_str, None)
-                            old_real   = src_real.get(rid_str, None)
+                            old_status = src_status.get(rid_key, None)
+                            old_real   = src_real.get(rid_key, None)
 
                             if new_status == "Cliente":
                                 nr = _num_norm(new_real_val)
                                 if nr is None or nr <= 0:
-                                    invalid_rows.append((rid_str, "Debes capturar el ingreso REAL (> 0)"))
+                                    invalid_rows.append((rid_key, "Debes capturar el ingreso REAL (> 0)"))
                                     continue
 
                             upd = {}
@@ -729,19 +712,19 @@ if not ADMIN_FLAG_GLOBAL:
                                 changed = True
 
                             if changed:
-                                changes.append((rid_int, upd))
+                                changes.append((rid_uuid, upd))
 
                         if invalid_rows:
                             st.warning("Algunas filas no se pudieron procesar:")
-                            for rid, reason in invalid_rows:
-                                st.write(f"- {rid}: {reason}")
+                            for rk, reason in invalid_rows:
+                                st.write(f"- {rk}: {reason}")
 
                         if not changes:
                             st.info("No hay cambios por guardar en filas válidas.")
                         else:
-                            for rid_int, upd in changes:
+                            for rid_uuid, upd in changes:
                                 def _call_upd():
-                                    return supabase.table("capturas").update(upd).eq("id", rid_int).execute()
+                                    return supabase.table("capturas").update(upd).eq("id", rid_uuid).execute()
                                 _retry_on_jwt_expired(_call_upd)
                             st.success(f"Actualizados {len(changes)} registro(s) con ID válido.")
                             st.session_state.capturas_cache_buster += 1
@@ -751,18 +734,18 @@ if not ADMIN_FLAG_GLOBAL:
                     except Exception as e:
                         st.error(f"No se pudieron guardar los cambios: {e}")
 
-            # ----- Borrar seleccionados (sin st.modal, con confirmación y lock) -----
+            # ----- Borrar seleccionados (con confirmación y lock) -----
             with col_del:
                 if st.button("Borrar seleccionados", type="secondary", use_container_width=True, key="btn_del_sel"):
-                    ids_to_delete_str = [rid for rid, row in edited.iterrows() if bool(row.get("Borrar", False))]
-                    if not ids_to_delete_str:
+                    ids_to_delete_keys = [rk for rk, row in edited.iterrows() if bool(row.get("Borrar", False))]
+                    if not ids_to_delete_keys:
                         st.info("No marcaste registros para borrar.")
                     else:
-                        ids_to_delete = [int(id_map[rid]) for rid in ids_to_delete_str if rid in id_map]
+                        ids_to_delete = [id_map[rk] for rk in ids_to_delete_keys if rk in id_map]
                         if not ids_to_delete:
                             st.error("Ninguno de los seleccionados tiene ID válido para borrar.")
                         else:
-                            st.session_state.del_ids = ids_to_delete
+                            st.session_state.del_ids = ids_to_delete  # lista de UUID strings
                             st.session_state.ask_confirm_del = True
 
                 if st.session_state.get("ask_confirm_del", False):
