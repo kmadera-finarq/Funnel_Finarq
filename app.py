@@ -423,9 +423,10 @@ if not ADMIN_FLAG_GLOBAL:
 
         productos = load_productos()
 
+        # 👇 Agregada "Integra" a la lista
         REFERENCIADORES = [
             "Andrea","Ángel","Angie","Ariadna","César","Cornelio","Eduardo",
-            "Gilberto","Jorge","Karen","Lupita","Mafer","Marco","Paco","Pepe","Ricardo","Vania","Ximena",
+            "Gilberto","Jorge","Karen","Lupita","Mafer","Marco","Paco","Pepe","Ricardo","Vania","Ximena","Integra",
         ]
 
         with st.form("form_lead_simple", clear_on_submit=True):
@@ -792,13 +793,12 @@ with TAB_CONG:
             st.session_state.capturas_cache_buster += 1
             st.rerun()
 
-        # =====================  Alta de cliente para un asesor (ADMIN) =====================
-        st.markdown("### Registrar cliente para un asesor")
+        # ===================== 👑 Alta de cliente para un asesor (ADMIN) =====================
+        st.markdown("### 👑 Registrar cliente para un asesor")
 
-        # Si la función load_productos no está en el scope (porque solo asesores la definen), definimos una segura aquí
         def _load_productos_any():
             try:
-                return load_productos()  # si existe la versión cacheada del tablero de asesores
+                return load_productos()
             except Exception:
                 try:
                     _attach_postgrest_token_if_any()
@@ -816,9 +816,11 @@ with TAB_CONG:
             st.info("Aún no hay asesores detectados en capturas para asignar registros.")
         else:
             productos_admin = _load_productos_any()
+
+            # 👇 Agregada "Integra" también aquí
             REFERENCIADORES_ADMIN = [
                 "Andrea","Ángel","Angie","Ariadna","César","Cornelio","Eduardo",
-                "Gilberto","Jorge","Karen","Lupita","Mafer","Marco","Paco","Pepe","Ricardo","Vania","Ximena",
+                "Gilberto","Jorge","Karen","Lupita","Mafer","Marco","Paco","Pepe","Ricardo","Vania","Ximena","Integra",
             ]
 
             with st.form("form_admin_alta_para_asesor", clear_on_submit=True):
