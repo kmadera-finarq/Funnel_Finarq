@@ -792,8 +792,8 @@ with TAB_CONG:
             st.session_state.capturas_cache_buster += 1
             st.rerun()
 
-        # ===================== 👑 Alta de cliente para un asesor (ADMIN) =====================
-        st.markdown("### 👑 Registrar cliente para un asesor")
+        # =====================  Alta de cliente para un asesor (ADMIN) =====================
+        st.markdown("### Registrar cliente para un asesor")
 
         # Si la función load_productos no está en el scope (porque solo asesores la definen), definimos una segura aquí
         def _load_productos_any():
