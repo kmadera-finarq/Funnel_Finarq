@@ -792,6 +792,91 @@ with TAB_CONG:
             st.session_state.capturas_cache_buster += 1
             st.rerun()
 
+        # ===================== 👑 Alta de cliente para un asesor (ADMIN) =====================
+        st.markdown("### 👑 Registrar cliente para un asesor")
+
+        # Si la función load_productos no está en el scope (porque solo asesores la definen), definimos una segura aquí
+        def _load_productos_any():
+            try:
+                return load_productos()  # si existe la versión cacheada del tablero de asesores
+            except Exception:
+                try:
+                    _attach_postgrest_token_if_any()
+                    res = supabase.table("productos_config").select("producto,activo").eq("activo", True).order("producto").execute()
+                    prods = [r["producto"] for r in (res.data or []) if r.get("producto")]
+                    if not prods:
+                        prods = ["Divisas","Inversiones","Factoraje","Arrendamiento","TPV","Crédito TPV","Créditos"]
+                    return prods
+                except Exception:
+                    return ["Divisas","Inversiones","Factoraje","Arrendamiento","TPV","Crédito TPV","Créditos"]
+
+        ases_map_admin = _get_asesores_map()
+        asesores_select_admin = sorted(list(ases_map_admin.keys()))
+        if not asesores_select_admin:
+            st.info("Aún no hay asesores detectados en capturas para asignar registros.")
+        else:
+            productos_admin = _load_productos_any()
+            REFERENCIADORES_ADMIN = [
+                "Andrea","Ángel","Angie","Ariadna","César","Cornelio","Eduardo",
+                "Gilberto","Jorge","Karen","Lupita","Mafer","Marco","Paco","Pepe","Ricardo","Vania","Ximena",
+            ]
+
+            with st.form("form_admin_alta_para_asesor", clear_on_submit=True):
+                col_a, col_b = st.columns([1,1])
+                with col_a:
+                    asesor_alias_sel = st.selectbox("Asesor (alias)", asesores_select_admin)
+                    fecha_admin = st.date_input("Fecha *", value=date.today())
+                    cliente_admin = st.text_input("Cliente *").strip()
+                    refer_admin = st.selectbox(
+                        "Referenciador *",
+                        REFERENCIADORES_ADMIN,
+                        index=REFERENCIADORES_ADMIN.index("Jorge") if "Jorge" in REFERENCIADORES_ADMIN else 0,
+                        key="referenciador_admin_form"
+                    )
+                with col_b:
+                    producto_admin = st.selectbox("Producto *", productos_admin)
+                    tipo_bau_admin = st.selectbox("Tipo de cliente *", ["Nuevo","BAU"])
+                    estatus_admin = st.selectbox("Estatus *", ["Acercamiento","Propuesta","Documentación","Cliente"])
+                    monto_estimado_admin = st.number_input("Ingreso estimado (MXN) *", min_value=0.0, step=100.0, format="%.2f")
+
+                btn_guardar_admin = st.form_submit_button("Registrar para asesor", type="primary", use_container_width=True)
+
+            if btn_guardar_admin:
+                if (not cliente_admin or not producto_admin or not tipo_bau_admin or not estatus_admin
+                    or fecha_admin is None or not refer_admin):
+                    st.warning("Completa los campos obligatorios *.")
+                else:
+                    try:
+                        asesor_uid = ases_map_admin.get(asesor_alias_sel)
+                        if not asesor_uid:
+                            st.error("No se pudo resolver el user_id del asesor seleccionado.")
+                        else:
+                            payload = {
+                                "user_id": asesor_uid,              # 👈 dueño de la fila = ASESOR
+                                "asesor": asesor_alias_sel,         # 👈 alias de ese asesor (unifica vista)
+                                "fecha": fecha_admin.isoformat(),
+                                "cliente": cliente_admin,
+                                "referenciador": refer_admin,
+                                "producto": producto_admin,
+                                "tipo_bau": tipo_bau_admin,
+                                "estatus": estatus_admin,
+                                "monto_estimado": float(monto_estimado_admin),
+                            }
+                            def _ins_admin():
+                                return supabase.table("capturas").insert(payload).execute()
+                            _retry_on_jwt_expired(_ins_admin)
+                            st.success(f"Registro creado para **{asesor_alias_sel}**.")
+                            # refrescar datasets
+                            load_capturas_filtered.clear()
+                            st.session_state.capturas_cache_buster += 1
+                            st.rerun()
+                    except APIError as e:
+                        st.error(f"No se pudo crear el registro: {_format_api_error(e)}")
+                    except Exception as e:
+                        st.error(f"No se pudo crear el registro: {e}")
+
+        st.divider()
+
         col1, col2 = st.columns([1,1])
         with col1:
             mes_cong = st.date_input("Mes a analizar", value=date.today().replace(day=1),
@@ -869,6 +954,112 @@ with TAB_CONG:
             asesor=asesor_param, tipo_bau=tipo_param_det
         )
         st.dataframe(df_public_view(df_det), use_container_width=True)
+
+        # ===================== 🗑️ Borrado puntual por ADMIN (registros del asesor seleccionado) =====================
+        st.markdown("#### Borrar registros del asesor seleccionado (ADMIN)")
+
+        if ases_sel == "Todos":
+            st.info("Selecciona un **asesor específico** en el filtro superior para habilitar el borrado.")
+        elif df_det.empty:
+            st.write("No hay registros para los filtros actuales.")
+        else:
+            cols_edit_admin = ["id","cliente","producto","tipo_bau","estatus","fecha","referenciador","monto_estimado","monto_real","legacy_id"]
+            for c in cols_edit_admin:
+                if c not in df_det.columns:
+                    df_det[c] = pd.NA
+            df_edit_src_admin = df_det[cols_edit_admin].copy().reset_index(drop=True)
+
+            df_edit_src_admin["id_raw"] = df_edit_src_admin["id"].astype("string")
+            df_edit_src_admin["row_key"] = df_edit_src_admin.apply(
+                lambda r: (r["id_raw"] if pd.notna(r["id_raw"]) and str(r["id_raw"]).strip() not in ("", "None")
+                           else f"row_{int(r.name)}"),
+                axis=1
+            )
+            id_map_admin = {}
+            for _, r in df_edit_src_admin.iterrows():
+                rid = r.get("id_raw")
+                if pd.notna(rid) and str(rid).strip() not in ("", "None"):
+                    id_map_admin[str(r["row_key"])] = str(rid)
+
+            df_view_admin = df_edit_src_admin.set_index("row_key")[[
+                "cliente","producto","tipo_bau","estatus","fecha","referenciador","monto_estimado","monto_real"
+            ]]
+            df_view_admin["Borrar"] = False
+
+            edited_admin = st.data_editor(
+                df_view_admin,
+                key="editor_admin_borrado_asignado",
+                use_container_width=True,
+                column_config={
+                    "cliente": st.column_config.TextColumn("Cliente", disabled=True),
+                    "producto": st.column_config.TextColumn("Producto", disabled=True),
+                    "tipo_bau": st.column_config.TextColumn("Tipo", disabled=True),
+                    "estatus": st.column_config.TextColumn("Estatus", disabled=True),
+                    "fecha": st.column_config.DateColumn("Fecha", disabled=True),
+                    "referenciador": st.column_config.TextColumn("Referenciador", disabled=True),
+                    "monto_estimado": st.column_config.NumberColumn("Estimado (MXN)", disabled=True, format="%.2f"),
+                    "monto_real": st.column_config.NumberColumn("Real (MXN)", disabled=True, format="%.2f"),
+                    "Borrar": st.column_config.CheckboxColumn("Borrar", help="Marca para eliminar este registro"),
+                },
+                disabled=["cliente","producto","tipo_bau","estatus","fecha","referenciador","monto_estimado","monto_real"],
+                hide_index=True,
+            )
+
+            # Estado independiente para confirmación en modo admin
+            if "ask_confirm_del_admin" not in st.session_state:
+                st.session_state.ask_confirm_del_admin = False
+            if "del_ids_admin" not in st.session_state:
+                st.session_state.del_ids_admin = []
+            if "delete_busy_admin" not in st.session_state:
+                st.session_state.delete_busy_admin = False
+
+            col_del_admin1, col_del_admin2 = st.columns([1,1])
+            with col_del_admin1:
+                if st.button("Borrar seleccionados (ADMIN)", type="secondary", use_container_width=True, key="btn_del_sel_admin"):
+                    ids_to_delete_keys = [rk for rk, row in edited_admin.iterrows() if bool(row.get("Borrar", False))]
+                    if not ids_to_delete_keys:
+                        st.info("No marcaste registros para borrar.")
+                    else:
+                        ids_to_delete = [id_map_admin[rk] for rk in ids_to_delete_keys if rk in id_map_admin]
+                        if not ids_to_delete:
+                            st.error("Ninguno de los seleccionados tiene ID válido para borrar.")
+                        else:
+                            # Guardar la selección y requerir confirmación
+                            st.session_state.del_ids_admin = ids_to_delete
+                            st.session_state.ask_confirm_del_admin = True
+
+            # Confirmación explícita
+            if st.session_state.get("ask_confirm_del_admin", False):
+                ids_preview = st.session_state.get("del_ids_admin", [])
+                st.warning(
+                    f"Se eliminarán **{len(ids_preview)}** registro(s) del asesor **{ases_sel}** "
+                    f"en el periodo seleccionado. Esta acción **no** se puede deshacer."
+                )
+                c1a, c2a = st.columns(2)
+                with c1a:
+                    if st.button(
+                        "Sí, borrar definitivamente (ADMIN)",
+                        key="confirm_del_now_admin",
+                        use_container_width=True,
+                        disabled=st.session_state.delete_busy_admin
+                    ):
+                        st.session_state.delete_busy_admin = True
+                        with st.spinner("Borrando..."):
+                            ok = delete_capturas_by_ids(ids_preview)
+                        st.session_state.delete_busy_admin = False
+                        st.session_state.ask_confirm_del_admin = False
+                        st.session_state.del_ids_admin = []
+                        if ok:
+                            st.success("Registro(s) eliminado(s).")
+                            # refrescar datasets y visor
+                            load_capturas_filtered.clear()
+                            st.session_state.capturas_cache_buster += 1
+                            st.rerun()
+                with c2a:
+                    if st.button("Cancelar", key="cancel_del_now_admin", use_container_width=True):
+                        st.session_state.ask_confirm_del_admin = False
+                        st.session_state.del_ids_admin = []
+                        st.info("Borrado cancelado.")
 
         # ===================== 📝 Observaciones (admin) =====================
         st.markdown("### 📝 Crear observación para un asesor")
