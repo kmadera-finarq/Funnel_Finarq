@@ -440,7 +440,7 @@ if not ADMIN_FLAG_GLOBAL:
             )
             producto = st.selectbox("Producto *", productos)
             tipo_bau = st.selectbox("Tipo de cliente *", ["Nuevo","BAU"])
-            estatus = st.selectbox("Estatus *", ["Acercamiento","Propuesta","Documentación","Cliente"])
+            estatus = st.selectbox("Estatus *", ["Acercamiento","Propuesta","Documentación","Cliente","Cancelado"])
             monto_estimado = st.number_input("Ingreso estimado (MXN) *", min_value=0.0, step=100.0, format="%.2f", key="monto_estimado_form")
             ok = st.form_submit_button("Guardar", type="primary", use_container_width=True)
 
@@ -647,12 +647,16 @@ if not ADMIN_FLAG_GLOBAL:
                 key="editor_mis_registros",
                 use_container_width=True,
                 column_config={
+                    "cliente": st.column_config.TextColumn("Cliente"),  # aún libre (si quieres también lo ponemos en catálogo)
+                    "producto": st.column_config.SelectboxColumn("Producto", options=productos),  # ✅ catálogo de productos
+                    "tipo_bau": st.column_config.SelectboxColumn("Tipo", options=["Nuevo","BAU"]),  # ✅ opciones fijas
                     "estatus": st.column_config.SelectboxColumn(
                         "Estatus",
-                        options=["Acercamiento","Propuesta","Documentación","Cliente"],
+                        options=["Acercamiento","Propuesta","Documentación","Cliente","Cancelado"],  # ✅ agregado Cancelado
                         required=True
                     ),
                     "fecha": st.column_config.DateColumn("Fecha"),
+                    "referenciador": st.column_config.SelectboxColumn("Referenciador", options=REFERENCIADORES),  # ✅ catálogo
                     "monto_estimado": st.column_config.NumberColumn("Estimado (MXN)", step=100.0, format="%.2f"),
                     "monto_real": st.column_config.NumberColumn("Real (MXN)", step=100.0, format="%.2f"),
                     "Borrar": st.column_config.CheckboxColumn("Borrar", help="Marca para eliminar este registro"),
@@ -660,6 +664,7 @@ if not ADMIN_FLAG_GLOBAL:
                 disabled=[],  # 👈 ahora todas las columnas son editables
                 hide_index=True,
             )
+
 
             col_save, col_del = st.columns([1,1])
 
