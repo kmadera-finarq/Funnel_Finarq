@@ -613,33 +613,32 @@ if not ADMIN_FLAG_GLOBAL:
             st.write(", ".join(sorted(set(solo_acerc))) if solo_acerc else "—")
 
         # ========= Edición de estatus + BORRADO (IDs UUID seguros) =========
-        st.markdown("#### Editar estatus de mis registros")
+        # ✅ MODIFICADO: Bloque edición de registros
+        st.markdown("#### Editar mis registros")
         if df_f.empty:
             st.write("—")
         else:
-            cols_edit = ["id","cliente","producto","tipo_bau","estatus","fecha","referenciador","monto_estimado","monto_real","legacy_id"]
+            cols_edit = [
+                "id","cliente","producto","tipo_bau","estatus",
+                "fecha","referenciador","monto_estimado","monto_real","legacy_id"
+            ]
             for c in cols_edit:
                 if c not in df_f.columns:
                     df_f[c] = pd.NA
             df_edit_src = df_f[cols_edit].copy().reset_index(drop=True)
 
-            # ID crudo UUID (string). Si no hay, se usa row_key sintético.
             df_edit_src["id_raw"] = df_edit_src["id"].astype("string")
             df_edit_src["row_key"] = df_edit_src.apply(
                 lambda r: (r["id_raw"] if pd.notna(r["id_raw"]) and str(r["id_raw"]).strip() not in ("", "None")
-                           else f"row_{int(r.name)}"),
+                        else f"row_{int(r.name)}"),
                 axis=1
             )
-
-            # Mapa row_key -> UUID real
-            id_map = {}
-            for _, r in df_edit_src.iterrows():
-                rid = r.get("id_raw")
-                if pd.notna(rid) and str(rid).strip() not in ("", "None"):
-                    id_map[str(r["row_key"])] = str(rid)
+            id_map = {str(r["row_key"]): str(r["id_raw"]) for _, r in df_edit_src.iterrows()
+                    if pd.notna(r["id_raw"]) and str(r["id_raw"]).strip() not in ("", "None")}
 
             df_view = df_edit_src.set_index("row_key")[[
-                "cliente","producto","tipo_bau","estatus","fecha","referenciador","monto_estimado","monto_real"
+                "cliente","producto","tipo_bau","estatus",
+                "fecha","referenciador","monto_estimado","monto_real"
             ]]
             df_view["Borrar"] = False
 
@@ -648,137 +647,97 @@ if not ADMIN_FLAG_GLOBAL:
                 key="editor_mis_registros",
                 use_container_width=True,
                 column_config={
-                    "estatus": st.column_config.SelectboxColumn("Estatus",
-                        options=["Acercamiento","Propuesta","Documentación","Cliente"], required=True),
-                    "cliente": st.column_config.TextColumn("Cliente", disabled=True),
-                    "producto": st.column_config.TextColumn("Producto", disabled=True),
-                    "tipo_bau": st.column_config.TextColumn("Tipo", disabled=True),
-                    "fecha": st.column_config.DateColumn("Fecha", disabled=True),
-                    "referenciador": st.column_config.TextColumn("Referenciador", disabled=True),
-                    "monto_estimado": st.column_config.NumberColumn("Estimado (MXN)", disabled=True, format="%.2f"),
+                    "estatus": st.column_config.SelectboxColumn(
+                        "Estatus",
+                        options=["Acercamiento","Propuesta","Documentación","Cliente"],
+                        required=True
+                    ),
+                    "fecha": st.column_config.DateColumn("Fecha"),
+                    "monto_estimado": st.column_config.NumberColumn("Estimado (MXN)", step=100.0, format="%.2f"),
                     "monto_real": st.column_config.NumberColumn("Real (MXN)", step=100.0, format="%.2f"),
                     "Borrar": st.column_config.CheckboxColumn("Borrar", help="Marca para eliminar este registro"),
                 },
-                disabled=["cliente","producto","tipo_bau","fecha","referenciador","monto_estimado"],
+                disabled=[],  # 👈 ahora todas las columnas son editables
                 hide_index=True,
             )
 
             col_save, col_del = st.columns([1,1])
 
-            # ----- Guardar cambios de estatus -----
+            # ----- Guardar cambios -----
             with col_save:
-                if st.button("Guardar cambios de estatus", type="primary", use_container_width=True):
+                if st.button("Guardar cambios", type="primary", use_container_width=True):
                     try:
-                        # Estado original por row_key
-                        src_status = {}
-                        src_real = {}
-                        for _, r in df_edit_src.iterrows():
-                            key = str(r["row_key"])
-                            src_status[key] = r["estatus"]
-                            src_real[key]   = r.get("monto_real")
-
-                        def _num_norm(x):
-                            try:
-                                return None if x is None or pd.isna(x) else float(x)
-                            except Exception:
-                                return None
-
-                        changes = []      # [(uuid, dict_update)]
-                        invalid_rows = [] # [(row_key, reason)]
-
+                        changes = []
                         for rid_key, row in edited.iterrows():
                             rid_uuid = id_map.get(rid_key)
                             if rid_uuid is None:
-                                invalid_rows.append((rid_key, "ID no resolvible (no se puede actualizar esta fila)."))
                                 continue
-
-                            new_status = row["estatus"]
-                            new_real_val = row.get("monto_real")
-                            old_status = src_status.get(rid_key, None)
-                            old_real   = src_real.get(rid_key, None)
-
-                            if new_status == "Cliente":
-                                nr = _num_norm(new_real_val)
-                                if nr is None or nr <= 0:
-                                    invalid_rows.append((rid_key, "Debes capturar el ingreso REAL (> 0)"))
-                                    continue
-
                             upd = {}
-                            changed = False
-                            if old_status != new_status:
-                                upd["estatus"] = new_status
-                                changed = True
-                            if _num_norm(new_real_val) != _num_norm(old_real):
-                                upd["monto_real"] = _num_norm(new_real_val)
-                                changed = True
-
-                            if changed:
+                            for col in ["cliente","producto","tipo_bau","estatus",
+                                        "fecha","referenciador","monto_estimado","monto_real"]:
+                                new_val = row.get(col)
+                                old_val = df_edit_src.loc[df_edit_src["row_key"] == rid_key, col].values[0]
+                                if pd.isna(new_val) and pd.isna(old_val):
+                                    continue
+                                if str(new_val) != str(old_val):
+                                    upd[col] = new_val
+                            if upd:
                                 changes.append((rid_uuid, upd))
-
-                        if invalid_rows:
-                            st.warning("Algunas filas no se pudieron procesar:")
-                            for rk, reason in invalid_rows:
-                                st.write(f"- {rk}: {reason}")
-
                         if not changes:
-                            st.info("No hay cambios por guardar en filas válidas.")
+                            st.info("No hay cambios por guardar.")
                         else:
                             for rid_uuid, upd in changes:
                                 def _call_upd():
                                     return supabase.table("capturas").update(upd).eq("id", rid_uuid).execute()
                                 _retry_on_jwt_expired(_call_upd)
-                            st.success(f"Actualizados {len(changes)} registro(s) con ID válido.")
+                            st.success(f"Actualizados {len(changes)} registro(s).")
                             st.session_state.capturas_cache_buster += 1
                             st.rerun()
-                    except APIError as e:
-                        st.error(f"No se pudieron guardar los cambios: {_format_api_error(e)}")
                     except Exception as e:
                         st.error(f"No se pudieron guardar los cambios: {e}")
 
-            # ----- Borrar seleccionados (con confirmación y lock) -----
+            # ----- Borrar seleccionados -----
             with col_del:
-                if st.button("Borrar seleccionados", type="secondary", use_container_width=True, key="btn_del_sel"):
+                if st.button("Borrar seleccionados", type="secondary", use_container_width=True):
                     ids_to_delete_keys = [rk for rk, row in edited.iterrows() if bool(row.get("Borrar", False))]
-                    if not ids_to_delete_keys:
-                        st.info("No marcaste registros para borrar.")
+                    ids_to_delete = [id_map[rk] for rk in ids_to_delete_keys if rk in id_map]
+                    if not ids_to_delete:
+                        st.info("No seleccionaste registros válidos.")
                     else:
-                        ids_to_delete = [id_map[rk] for rk in ids_to_delete_keys if rk in id_map]
-                        if not ids_to_delete:
-                            st.error("Ninguno de los seleccionados tiene ID válido para borrar.")
-                        else:
-                            st.session_state.del_ids = ids_to_delete  # lista de UUID strings
-                            st.session_state.ask_confirm_del = True
+                        st.session_state.del_ids = ids_to_delete
+                        st.session_state.ask_confirm_del = True
 
-                if st.session_state.get("ask_confirm_del", False):
-                    ids_preview = st.session_state.get("del_ids", [])
-                    st.warning(
-                        f"Se eliminarán **{len(ids_preview)}** registro(s). "
-                        "Esta acción **no** se puede deshacer."
-                    )
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        if st.button(
-                            "Sí, borrar definitivamente",
-                            key="confirm_del_now",
-                            use_container_width=True,
-                            disabled=st.session_state.delete_busy
-                        ):
-                            st.session_state.delete_busy = True
-                            with st.spinner("Borrando..."):
-                                ok = delete_capturas_by_ids(ids_preview)
-                            st.session_state.delete_busy = False
-                            st.session_state.ask_confirm_del = False
-                            st.session_state.del_ids = []
-                            if ok:
-                                st.success("Registro(s) eliminado(s).")
-                                load_capturas_filtered.clear()
-                                st.session_state.capturas_cache_buster += 1
-                                st.rerun()
-                    with c2:
-                        if st.button("Cancelar", key="cancel_del_now", use_container_width=True):
-                            st.session_state.ask_confirm_del = False
-                            st.session_state.del_ids = []
-                            st.info("Borrado cancelado.")
+            if st.session_state.get("ask_confirm_del", False):
+                ids_preview = st.session_state.get("del_ids", [])
+                st.warning(
+                    f"Se eliminarán **{len(ids_preview)}** registro(s). "
+                    "Esta acción **no** se puede deshacer."
+                )
+                c1, c2 = st.columns(2)
+                with c1:
+                    if st.button(
+                        "Sí, borrar definitivamente",
+                        key="confirm_del_now",
+                        use_container_width=True,
+                        disabled=st.session_state.delete_busy
+                    ):
+                        st.session_state.delete_busy = True
+                        with st.spinner("Borrando..."):
+                            ok = delete_capturas_by_ids(ids_preview)
+                        st.session_state.delete_busy = False
+                        st.session_state.ask_confirm_del = False
+                        st.session_state.del_ids = []
+                        if ok:
+                            st.success("Registro(s) eliminado(s).")
+                            load_capturas_filtered.clear()
+                            st.session_state.capturas_cache_buster += 1
+                            st.rerun()
+                with c2:
+                    if st.button("Cancelar", key="cancel_del_now", use_container_width=True):
+                        st.session_state.ask_confirm_del = False
+                        st.session_state.del_ids = []
+                        st.info("Borrado cancelado.")
+
 
 # -------------------- Conglomerado (admins) --------------------
 with TAB_CONG:
@@ -924,7 +883,8 @@ with TAB_CONG:
                     "Estimado (MXN)": round(sum_est, 2),
                     "Real (MXN)": round(sum_real, 2),
                     "Tasa de conversión (Clientes/Total) %": round(conv_pct, 2),
-                    "Semáforo": light,
+                    "Semáforo": f"{light} ({total_reg})",
+
                 })
             df_resumen = pd.DataFrame(resumen_rows).sort_values("asesor")
             st.dataframe(df_resumen, use_container_width=True)
