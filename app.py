@@ -757,8 +757,8 @@ with TAB_CONG:
             st.session_state.capturas_cache_buster += 1
             st.rerun()
 
-        # ===================== 👑 Alta de cliente para un asesor (ADMIN) =====================
-        st.markdown("### 👑 Registrar cliente para un asesor")
+        # =====================  Alta de cliente para un asesor (ADMIN) =====================
+        st.markdown("### Registrar cliente para un asesor")
 
         def _load_productos_any():
             try:
@@ -802,7 +802,7 @@ with TAB_CONG:
                 with col_b:
                     producto_admin = st.selectbox("Producto *", productos_admin)
                     tipo_bau_admin = st.selectbox("Tipo de cliente *", ["Nuevo","BAU"])
-                    estatus_admin = st.selectbox("Estatus *", ["Acercamiento","Propuesta","Documentación","Cliente"])
+                    estatus_admin = st.selectbox("Estatus *", ["Acercamiento","Propuesta","Documentación","Cliente","Cancelado"])
                     monto_estimado_admin = st.number_input("Ingreso estimado (MXN) *", min_value=0.0, step=100.0, format="%.2f")
 
                 btn_guardar_admin = st.form_submit_button("Registrar para asesor", type="primary", use_container_width=True)
