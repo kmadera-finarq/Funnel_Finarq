@@ -1092,10 +1092,11 @@ with TAB_CONG:
         else:
             df_obs_admin_ed = df_obs_admin.copy()
             df_obs_admin_ed = df_obs_admin_ed[[
-                "created_at","asesor_alias","cliente","mensaje","done"
+                "id","created_at","asesor_alias","cliente","mensaje","done"
             ]].sort_values("created_at", ascending=False)
+            df_obs_admin_ed["Eliminar"] = False
 
-            st.caption("Marca/Desmarca la columna **Hecha** y guarda los cambios.")
+            st.caption("Marca/Desmarca la columna **Hecha** o marca **Eliminar** y guarda los cambios.")
             edited_obs = st.data_editor(
                 df_obs_admin_ed.rename(columns={
                     "created_at": "Creada",
@@ -1103,6 +1104,7 @@ with TAB_CONG:
                     "cliente": "Cliente",
                     "mensaje": "Observación",
                     "done": "Hecha",
+                    "Eliminar": "Eliminar",
                 }),
                 key="editor_obs_admin",
                 use_container_width=True,
@@ -1113,52 +1115,58 @@ with TAB_CONG:
                     "Cliente": st.column_config.TextColumn("Cliente", disabled=True),
                     "Observación": st.column_config.TextColumn("Observación", disabled=True),
                     "Hecha": st.column_config.CheckboxColumn("Hecha"),
+                    "Eliminar": st.column_config.CheckboxColumn("Eliminar"),
                 }
             )
 
-            if st.button("Guardar cambios de observaciones", type="primary"):
-                try:
-                    base = df_obs_admin[["id","created_at","asesor_alias","cliente","mensaje","done"]].copy()
-                    base = base.rename(columns={
-                        "created_at": "Creada",
-                        "asesor_alias": "Asesor",
-                        "cliente": "Cliente",
-                        "mensaje": "Observación",
-                        "done": "Hecha",
-                    })
+            col_upd, col_del = st.columns([1,1])
 
-                    merged = base.merge(
-                        edited_obs,
-                        on=["Creada","Asesor","Cliente","Observación"],
-                        suffixes=("_old","_new"),
-                        how="left"
-                    )
+            with col_upd:
+                if st.button("Guardar cambios de observaciones", type="primary"):
+                    try:
+                        updates = []
+                        for _, r in edited_obs.iterrows():
+                            oid = str(r["id"])
+                            old_done = bool(df_obs_admin_ed.loc[df_obs_admin_ed["id"] == oid, "done"].iloc[0])
+                            new_done = bool(r["Hecha"])
+                            if new_done != old_done:
+                                payload = {"done": new_done}
+                                if new_done:
+                                    payload["done_at"] = datetime.utcnow().isoformat() + "Z"
+                                    payload["done_by_user_id"] = user.id
+                                else:
+                                    payload["done_at"] = None
+                                    payload["done_by_user_id"] = None
+                                def _upd():
+                                    return supabase.table("observaciones").update(payload).eq("id", oid).execute()
+                                _retry_on_jwt_expired(_upd)
+                                updates.append(oid)
+                        if updates:
+                            st.success(f"Actualizadas {len(updates)} observación(es).")
+                            st.session_state.obs_cache_buster += 1
+                            st.rerun()
+                        else:
+                            st.info("No hay cambios por guardar.")
+                    except Exception as e:
+                        st.error(f"No se pudieron guardar los cambios: {e}")
 
-                    updates = []
-                    for _, r in merged.iterrows():
-                        old = bool(r["Hecha_old"])
-                        new = bool(r["Hecha_new"])
-                        if new != old:
-                            updates.append((str(r["id"]), new))
-
-                    if not updates:
-                        st.info("No hay cambios por guardar.")
+            with col_del:
+                if st.button("Borrar seleccionadas", type="secondary"):
+                    to_delete = [str(r["id"]) for _, r in edited_obs.iterrows() if r["Eliminar"]]
+                    if not to_delete:
+                        st.info("No hay observaciones seleccionadas para borrar.")
                     else:
-                        for oid, new_done in updates:
-                            if new_done:
-                                payload = {"done": True, "done_at": datetime.utcnow().isoformat() + "Z", "done_by_user_id": user.id}
-                            else:
-                                payload = {"done": False, "done_at": None, "done_by_user_id": None}
-                            def _upd():
-                                return supabase.table("observaciones").update(payload).eq("id", oid).execute()
-                            _retry_on_jwt_expired(_upd)
-                        st.success(f"Actualizadas {len(updates)} observación(es).")
-                        st.session_state.obs_cache_buster += 1
-                        st.rerun()
-                except APIError as e:
-                    st.error(f"No se pudieron actualizar observaciones: {_format_api_error(e)}")
-                except Exception as e:
-                    st.error(f"No se pudieron actualizar observaciones: {e}")
+                        try:
+                            for oid in to_delete:
+                                def _del():
+                                    return supabase.table("observaciones").delete().eq("id", oid).execute()
+                                _retry_on_jwt_expired(_del)
+                            st.success(f"Eliminadas {len(to_delete)} observación(es) ✅")
+                            st.session_state.obs_cache_buster += 1
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"No se pudieron eliminar: {e}")
+
 
 # -------------------- Config (admins) --------------------
 with TAB_CFG:
