@@ -377,13 +377,18 @@ def conversion_closed_over_total(total_reg: int, clientes: int):
 
 # ---- Vista pública para tablas simples ----
 DISPLAY_COLS = [
-    "cliente","producto","tipo_bau","estatus","fecha","referenciador","monto_estimado","monto_real"
+    "asesor","cliente","producto","tipo_bau","estatus","fecha",
+    "referenciador","monto_estimado","monto_real"
 ]
+
 def df_public_view(df: pd.DataFrame) -> pd.DataFrame:
     if df is None or df.empty:
         return df
+    # Mantener el orden con 'asesor' primero
     cols = [c for c in DISPLAY_COLS if c in df.columns]
-    return df[cols].sort_values(["fecha", "cliente"], ascending=[False, True])
+    df_out = df[cols].sort_values(["fecha", "cliente"], ascending=[False, True])
+    return df_out
+
 
 # -----------------------------------------------------------------------------
 # UI (Header con logo)
