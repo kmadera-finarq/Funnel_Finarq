@@ -444,7 +444,7 @@ if not ADMIN_FLAG_GLOBAL:
                 key="referenciador_form"
             )
             producto = st.selectbox("Producto *", productos)
-            tipo_bau = st.selectbox("Tipo de cliente *", ["Nuevo","BAU"])
+            tipo_bau = st.selectbox("Tipo de cliente *", ["Nuevo","BAU","Visita Cartera"])
             estatus = st.selectbox("Estatus *", ["Acercamiento","Propuesta","Documentación","Cliente","Cancelado"])
             monto_estimado = st.number_input("Ingreso estimado (MXN) *", min_value=0.0, step=100.0, format="%.2f", key="monto_estimado_form")
             ok = st.form_submit_button("Guardar", type="primary", use_container_width=True)
@@ -853,7 +853,7 @@ with TAB_CONG:
             mes_cong = st.date_input("Mes a analizar", value=date.today().replace(day=1),
                                      key="mes_analizar_cong").replace(day=1)
         with col2:
-            tipo_cong = st.radio("Tipo de cliente", ["Todos","Nuevo","BAU"], horizontal=True, key="tipo_cong")
+            tipo_cong = st.radio("Tipo de cliente", ["Todos","Nuevo","BAU","Visita Cartera"], horizontal=True, key="tipo_cong")
 
         mes_cong_fin = mes_cong + relativedelta(months=1)
         tipo_cong_param = None if tipo_cong == "Todos" else tipo_cong
@@ -908,7 +908,7 @@ with TAB_CONG:
         else:
             asesores_base = []
         asesores_lista = ["Todos"] + asesores_base
-        tipos_lista = ["Todos","Nuevo","BAU"]
+        tipos_lista = ["Todos","Nuevo","BAU","Visita Cartera"]
 
         colf1, colf2 = st.columns([1,1])
         with colf1:
