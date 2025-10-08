@@ -219,7 +219,7 @@ def _query_capturas(
     scope: str,
     date_from: date | None = None,
     date_to_exclusive: date | None = None,
-    tipo_bau: str | None = None,
+    tipo: str | None = None,
     asesor: str | None = None,
     estatus: str | None = None,
     limit: int = 5000,
@@ -233,8 +233,8 @@ def _query_capturas(
             q = q.gte("fecha", date_from.isoformat())
         if date_to_exclusive is not None:
             q = q.lt("fecha", date_to_exclusive.isoformat())
-        if tipo_bau:
-            q = q.eq("tipo_bau", tipo_bau)
+        if tipo:
+            q = q.eq("tipo", tipo)
         if asesor:
             q = q.eq("asesor", asesor)
         if estatus:
@@ -246,14 +246,14 @@ def _query_capturas(
     df = pd.DataFrame(res.data or [])
     if not df.empty:
         required_cols = [
-            "id","fecha","referenciador","cliente","producto","tipo_bau",
+            "id","fecha","referenciador","cliente","producto","tipo",
             "estatus","asesor","ts","user_id","monto_estimado","monto_real","legacy_id"
         ]
         for c in required_cols:
             if c not in df.columns:
                 df[c] = pd.NA
         df["fecha"] = pd.to_datetime(df["fecha"], errors="coerce").dt.date
-        for c in ("referenciador","cliente","producto","tipo_bau","estatus","asesor"):
+        for c in ("referenciador","cliente","producto","tipo","estatus","asesor"):
             if df[c].dtype != object:
                 df[c] = df[c].astype("string")
         for numc in ("monto_estimado","monto_real"):
@@ -262,7 +262,7 @@ def _query_capturas(
             df[numc] = pd.to_numeric(df[numc], errors="coerce")
     else:
         df = pd.DataFrame(columns=[
-            "id","fecha","referenciador","cliente","producto","tipo_bau",
+            "id","fecha","referenciador","cliente","producto","tipo",
             "estatus","asesor","ts","user_id","monto_estimado","monto_real","legacy_id"
         ])
     return df
@@ -276,7 +276,7 @@ def load_capturas_filtered(
     scope: str,
     date_from: date | None = None,
     date_to_exclusive: date | None = None,
-    tipo_bau: str | None = None,
+    tipo: str | None = None,
     asesor: str | None = None,
     estatus: str | None = None,
     limit: int = 5000,
@@ -287,7 +287,7 @@ def load_capturas_filtered(
         scope=scope,
         date_from=date_from,
         date_to_exclusive=date_to_exclusive,
-        tipo_bau=tipo_bau,
+        tipo=tipo,
         asesor=asesor,
         estatus=estatus,
         limit=limit,
@@ -377,7 +377,7 @@ def conversion_closed_over_total(total_reg: int, clientes: int):
 
 # ---- Vista pública para tablas simples ----
 DISPLAY_COLS = [
-    "asesor","cliente","producto","tipo_bau","estatus","fecha",
+    "asesor","cliente","producto","tipo","estatus","fecha",
     "referenciador","monto_estimado","monto_real"
 ]
 
@@ -444,13 +444,13 @@ if not ADMIN_FLAG_GLOBAL:
                 key="referenciador_form"
             )
             producto = st.selectbox("Producto *", productos)
-            tipo_bau = st.selectbox("Tipo de cliente *", ["Nuevo","BAU","Visita Cartera"])
+            tipo = st.selectbox("Tipo de cliente *", ["Nuevo","BAU","Visita Cartera"])
             estatus = st.selectbox("Estatus *", ["Acercamiento","Propuesta","Documentación","Cliente","Cancelado"])
             monto_estimado = st.number_input("Ingreso estimado (MXN) *", min_value=0.0, step=100.0, format="%.2f", key="monto_estimado_form")
             ok = st.form_submit_button("Guardar", type="primary", use_container_width=True)
 
         if ok:
-            if (not cliente or not producto or not tipo_bau or not estatus
+            if (not cliente or not producto or not tipo or not estatus
                 or fecha is None or not referenciador or monto_estimado is None):
                 st.warning("Completa los campos obligatorios *.")
             else:
@@ -460,7 +460,7 @@ if not ADMIN_FLAG_GLOBAL:
                     "cliente": cliente,
                     "referenciador": referenciador,
                     "producto": producto,
-                    "tipo_bau": tipo_bau,
+                    "tipo": tipo,
                     "estatus": estatus,
                     "monto_estimado": float(monto_estimado),
                 }
@@ -540,7 +540,7 @@ if not ADMIN_FLAG_GLOBAL:
             st.session_state.capturas_cache_buster,
             uid=st.session_state.user.id, is_admin_flag=ADMIN_FLAG, scope="mine",
             date_from=mes_inicio, date_to_exclusive=mes_fin_excl,
-            tipo_bau=tipo_param
+            tipo=tipo_param
         )
 
         st.markdown("#### Historial")
@@ -625,7 +625,7 @@ if not ADMIN_FLAG_GLOBAL:
             st.write("—")
         else:
             cols_edit = [
-                "id","cliente","producto","tipo_bau","estatus",
+                "id","cliente","producto","tipo","estatus",
                 "fecha","referenciador","monto_estimado","monto_real","legacy_id"
             ]
             for c in cols_edit:
@@ -643,7 +643,7 @@ if not ADMIN_FLAG_GLOBAL:
                     if pd.notna(r["id_raw"]) and str(r["id_raw"]).strip() not in ("", "None")}
 
             df_view = df_edit_src.set_index("row_key")[[
-                "cliente","producto","tipo_bau","estatus",
+                "cliente","producto","tipo","estatus",
                 "fecha","referenciador","monto_estimado","monto_real"
             ]]
             df_view["Borrar"] = False
@@ -655,7 +655,7 @@ if not ADMIN_FLAG_GLOBAL:
                 column_config={
                     "cliente": st.column_config.TextColumn("Cliente"),  # aún libre (si quieres también lo ponemos en catálogo)
                     "producto": st.column_config.SelectboxColumn("Producto", options=productos),  # ✅ catálogo de productos
-                    "tipo_bau": st.column_config.SelectboxColumn("Tipo", options=["Nuevo","BAU"]),  # ✅ opciones fijas
+                    "tipo": st.column_config.SelectboxColumn("Tipo", options=["Nuevo","BAU","Visita Cartera"]),  # ✅ opciones fijas
                     "estatus": st.column_config.SelectboxColumn(
                         "Estatus",
                         options=["Acercamiento","Propuesta","Documentación","Cliente","Cancelado"],  # ✅ agregado Cancelado
@@ -684,7 +684,7 @@ if not ADMIN_FLAG_GLOBAL:
                             if rid_uuid is None:
                                 continue
                             upd = {}
-                            for col in ["cliente","producto","tipo_bau","estatus",
+                            for col in ["cliente","producto","tipo","estatus",
                                         "fecha","referenciador","monto_estimado","monto_real"]:
                                 new_val = row.get(col)
                                 old_val = df_edit_src.loc[df_edit_src["row_key"] == rid_key, col].values[0]
@@ -807,14 +807,14 @@ with TAB_CONG:
                     )
                 with col_b:
                     producto_admin = st.selectbox("Producto *", productos_admin)
-                    tipo_bau_admin = st.selectbox("Tipo de cliente *", ["Nuevo","BAU"])
+                    tipo_admin = st.selectbox("Tipo de cliente *", ["Nuevo","BAU","Visita Cartera"])
                     estatus_admin = st.selectbox("Estatus *", ["Acercamiento","Propuesta","Documentación","Cliente","Cancelado"])
                     monto_estimado_admin = st.number_input("Ingreso estimado (MXN) *", min_value=0.0, step=100.0, format="%.2f")
 
                 btn_guardar_admin = st.form_submit_button("Registrar para asesor", type="primary", use_container_width=True)
 
             if btn_guardar_admin:
-                if (not cliente_admin or not producto_admin or not tipo_bau_admin or not estatus_admin
+                if (not cliente_admin or not producto_admin or not tipo_admin or not estatus_admin
                     or fecha_admin is None or not refer_admin):
                     st.warning("Completa los campos obligatorios *.")
                 else:
@@ -830,7 +830,7 @@ with TAB_CONG:
                                 "cliente": cliente_admin,
                                 "referenciador": refer_admin,
                                 "producto": producto_admin,
-                                "tipo_bau": tipo_bau_admin,
+                                "tipo": tipo_admin,
                                 "estatus": estatus_admin,
                                 "monto_estimado": float(monto_estimado_admin),
                             }
@@ -863,7 +863,7 @@ with TAB_CONG:
             st.session_state.capturas_cache_buster,
             uid=st.session_state.user.id, is_admin_flag=ADMIN_FLAG, scope="all",
             date_from=mes_cong, date_to_exclusive=mes_cong_fin,
-            tipo_bau=tipo_cong_param
+            tipo=tipo_cong_param
         )
 
         st.markdown("### Resumen por asesor")
@@ -924,7 +924,7 @@ with TAB_CONG:
             st.session_state.capturas_cache_buster,
             uid=st.session_state.user.id, is_admin_flag=ADMIN_FLAG, scope="all",
             date_from=mes_cong, date_to_exclusive=mes_cong_fin,
-            asesor=asesor_param, tipo_bau=tipo_param_det
+            asesor=asesor_param, tipo=tipo_param_det
         )
         st.dataframe(df_public_view(df_det), use_container_width=True)
 
@@ -936,7 +936,7 @@ with TAB_CONG:
         elif df_det.empty:
             st.write("No hay registros para los filtros actuales.")
         else:
-            cols_edit_admin = ["id","cliente","producto","tipo_bau","estatus","fecha","referenciador","monto_estimado","monto_real","legacy_id"]
+            cols_edit_admin = ["id","cliente","producto","tipo","estatus","fecha","referenciador","monto_estimado","monto_real","legacy_id"]
             for c in cols_edit_admin:
                 if c not in df_det.columns:
                     df_det[c] = pd.NA
@@ -955,7 +955,7 @@ with TAB_CONG:
                     id_map_admin[str(r["row_key"])] = str(rid)
 
             df_view_admin = df_edit_src_admin.set_index("row_key")[[
-                "cliente","producto","tipo_bau","estatus","fecha","referenciador","monto_estimado","monto_real"
+                "cliente","producto","tipo","estatus","fecha","referenciador","monto_estimado","monto_real"
             ]]
             df_view_admin["Borrar"] = False
 
@@ -966,7 +966,7 @@ with TAB_CONG:
                 column_config={
                     "cliente": st.column_config.TextColumn("Cliente", disabled=True),
                     "producto": st.column_config.TextColumn("Producto", disabled=True),
-                    "tipo_bau": st.column_config.TextColumn("Tipo", disabled=True),
+                    "tipo": st.column_config.TextColumn("Tipo", disabled=True),
                     "estatus": st.column_config.TextColumn("Estatus", disabled=True),
                     "fecha": st.column_config.DateColumn("Fecha", disabled=True),
                     "referenciador": st.column_config.TextColumn("Referenciador", disabled=True),
@@ -974,7 +974,7 @@ with TAB_CONG:
                     "monto_real": st.column_config.NumberColumn("Real (MXN)", disabled=True, format="%.2f"),
                     "Borrar": st.column_config.CheckboxColumn("Borrar", help="Marca para eliminar este registro"),
                 },
-                disabled=["cliente","producto","tipo_bau","estatus","fecha","referenciador","monto_estimado","monto_real"],
+                disabled=["cliente","producto","tipo","estatus","fecha","referenciador","monto_estimado","monto_real"],
                 hide_index=True,
             )
 
