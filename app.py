@@ -530,7 +530,8 @@ if not ADMIN_FLAG_GLOBAL:
         with colf1:
             mes_inicio = st.date_input("Mes a analizar", value=date.today().replace(day=1), key="mes_indiv").replace(day=1)
         with colf2:
-            tipo_sel = st.radio("Tipo de cliente", ["Todos","Nuevo","BAU"], horizontal=True)
+            tipo_sel = st.radio("Tipo de cliente", ["Todos","Nuevo","BAU","Visita Cartera"], horizontal=True)
+
 
         mes_fin_excl = mes_inicio + relativedelta(months=1)
         tipo_param = None if tipo_sel == "Todos" else tipo_sel
