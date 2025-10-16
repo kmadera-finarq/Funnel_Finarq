@@ -787,10 +787,10 @@ with TAB_CONG:
         else:
             productos_admin = _load_productos_any()
 
-            # 👇 Agregada "Integra" también aquí
+            
             REFERENCIADORES_ADMIN = [
-                "Andrea","Ángel","Angie","Ariadna","César","Cornelio","Eduardo",
-                "Gilberto","Jorge","Karen","Lupita","Mafer","Marco","Paco","Pepe","Ricardo","Vania","Ximena","Integra",
+                "Amanda","Andrea","Ángel","Angie","Ariadna","César","Cornelio","Eduardo",
+                "Gilberto","Jorge","Karen","Lupita","Mafer","Marco","Paco","Pepe","Ricardo","Ximena","Integra",
             ]
 
             with st.form("form_admin_alta_para_asesor", clear_on_submit=True):
