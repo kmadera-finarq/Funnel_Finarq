@@ -430,8 +430,8 @@ if not ADMIN_FLAG_GLOBAL:
 
         # 👇 Agregada "Integra" a la lista
         REFERENCIADORES = [
-            "Andrea","Ángel","Angie","Ariadna","César","Cornelio","Eduardo",
-            "Gilberto","Jorge","Karen","Lupita","Mafer","Marco","Paco","Pepe","Ricardo","Vania","Ximena","Integra",
+            "Amanda","Andrea","Ángel","Angie","Ariadna","César","Cornelio","Eduardo",
+            "Gilberto","Jorge","Karen","Lupita","Mafer","Marco","Paco","Pepe","Ricardo","Ximena","Integra",
         ]
 
         with st.form("form_lead_simple", clear_on_submit=True):
