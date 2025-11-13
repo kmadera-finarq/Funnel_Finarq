@@ -865,7 +865,6 @@ with TAB_CONG:
             date_from=mes_cong, date_to_exclusive=mes_cong_fin,
             tipo=tipo_cong_param
         )
-
         # ===================== Registros por asesor (ADMIN) =====================
         st.markdown("### Registros por asesor")
 
@@ -893,26 +892,70 @@ with TAB_CONG:
         if ver_todo:
             df_det = load_capturas_filtered(
                 st.session_state.capturas_cache_buster,
-                uid=st.session_state.user.id, is_admin_flag=ADMIN_FLAG, scope="all",
-                asesor=asesor_param, tipo_bau=tipo_param_det,
-                date_from=None, date_to_exclusive=None
+                uid=st.session_state.user.id,
+                is_admin_flag=ADMIN_FLAG,
+                scope="all",
+                asesor=asesor_param,
+                tipo=tipo_param_det,
+                date_from=None,
+                date_to_exclusive=None
             )
         else:
             df_det = load_capturas_filtered(
                 st.session_state.capturas_cache_buster,
-                uid=st.session_state.user.id, is_admin_flag=ADMIN_FLAG, scope="all",
-                date_from=mes_cong, date_to_exclusive=mes_cong_fin,
-                asesor=asesor_param, tipo_bau=tipo_param_det
+                uid=st.session_state.user.id,
+                is_admin_flag=ADMIN_FLAG,
+                scope="all",
+                date_from=mes_cong,
+                date_to_exclusive=mes_cong_fin,
+                asesor=asesor_param,
+                tipo=tipo_param_det
             )
 
         # Mostrar tabla con asesor incluido
         if not df_det.empty:
-            df_det = df_det.copy()
-            if "asesor" in df_det.columns:
-                df_det = df_det[["asesor","cliente","producto","tipo","estatus","fecha","referenciador","monto_estimado","monto_real"]]
-            st.dataframe(df_det, use_container_width=True)
+            df_show = df_det.copy()
+
+            columnas = ["asesor","cliente","producto","tipo","estatus","fecha","referenciador","monto_estimado","monto_real"]
+            columnas = [c for c in columnas if c in df_show.columns]
+
+            df_show = df_show[columnas]
+
+            st.dataframe(df_show, use_container_width=True)
+
+            # ===================== Botones de descarga =====================
+            st.markdown("### Descargar registros filtrados")
+
+            # CSV
+            csv_bytes = df_show.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                label="⬇️ Descargar CSV",
+                data=csv_bytes,
+                file_name="registros_filtrados.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+
+            # Excel
+            import io
+            import pandas as pd
+
+            excel_buffer = io.BytesIO()
+            with pd.ExcelWriter(excel_buffer, engine="xlsxwriter") as writer:
+                df_show.to_excel(writer, index=False, sheet_name="Registros")
+            excel_data = excel_buffer.getvalue()
+
+            st.download_button(
+                label="⬇️ Descargar Excel (.xlsx)",
+                data=excel_data,
+                file_name="registros_filtrados.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+
         else:
             st.info("Sin registros para el filtro seleccionado.")
+
 
 
         # ===================== 🗑️ Borrado puntual por ADMIN (registros del asesor seleccionado) =====================
