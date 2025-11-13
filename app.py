@@ -866,48 +866,17 @@ with TAB_CONG:
             tipo=tipo_cong_param
         )
 
-        st.markdown("### Resumen por asesor")
-        if df_month.empty:
-            st.write("Sin datos para el filtro.")
-        else:
-            df_month = df_month.copy()
-            if "asesor" not in df_month.columns:
-                df_month["asesor"] = pd.NA
-
-            resumen_rows = []
-            for ases, chunk in df_month.groupby("asesor"):
-                total_reg = len(chunk)
-                ac = int((chunk["estatus"] == "Acercamiento").sum())
-                p  = int((chunk["estatus"] == "Propuesta").sum())
-                d  = int((chunk["estatus"] == "Documentación").sum())
-                c  = int((chunk["estatus"] == "Cliente").sum())
-                conv_pct, light = conversion_closed_over_total(total_reg, c)
-                sum_est = float(chunk["monto_estimado"].fillna(0).sum())
-                sum_real = float(chunk.loc[chunk["estatus"]=="Cliente","monto_real"].fillna(0).sum())
-                resumen_rows.append({
-                    "asesor": (ases if ases is not pd.NA and ases is not None else "—"),
-                    "Total": total_reg,
-                    "Acercamientos": ac,
-                    "Propuestas": p,
-                    "Documentación": d,
-                    "Clientes": c,
-                    "Estimado (MXN)": round(sum_est, 2),
-                    "Real (MXN)": round(sum_real, 2),
-                    "Tasa de conversión (Clientes/Total) %": round(conv_pct, 2),
-                    "Semáforo": f"{light} ({total_reg})",
-
-                })
-            df_resumen = pd.DataFrame(resumen_rows).sort_values("asesor")
-            st.dataframe(df_resumen, use_container_width=True)
-
-        red_max, yellow_max = get_thresholds()
-        st.caption(f"Semáforo: 🔴 ≤ {int(red_max*100)}%  |  🟡 ≤ {int(yellow_max*100)}%  |  🟢 > {int(yellow_max*100)}%")
-
+        # ===================== Registros por asesor (ADMIN) =====================
         st.markdown("### Registros por asesor")
+
+        # Nuevo toggle para ver TODO el histórico
+        ver_todo = st.checkbox("🔍 Ver todo el histórico (sin filtro de fechas)", value=False)
+
         if not df_month.empty and "asesor" in df_month.columns:
             asesores_base = sorted(df_month["asesor"].dropna().unique().tolist())
         else:
             asesores_base = []
+
         asesores_lista = ["Todos"] + asesores_base
         tipos_lista = ["Todos","Nuevo","BAU","Visita Cartera"]
 
@@ -920,13 +889,31 @@ with TAB_CONG:
         asesor_param = None if ases_sel == "Todos" else ases_sel
         tipo_param_det = None if tipo_sel == "Todos" else tipo_sel
 
-        df_det = load_capturas_filtered(
-            st.session_state.capturas_cache_buster,
-            uid=st.session_state.user.id, is_admin_flag=ADMIN_FLAG, scope="all",
-            date_from=mes_cong, date_to_exclusive=mes_cong_fin,
-            asesor=asesor_param, tipo=tipo_param_det
-        )
-        st.dataframe(df_public_view(df_det), use_container_width=True)
+        # Si el admin activa "Ver todo el histórico", no filtramos por fecha
+        if ver_todo:
+            df_det = load_capturas_filtered(
+                st.session_state.capturas_cache_buster,
+                uid=st.session_state.user.id, is_admin_flag=ADMIN_FLAG, scope="all",
+                asesor=asesor_param, tipo_bau=tipo_param_det,
+                date_from=None, date_to_exclusive=None
+            )
+        else:
+            df_det = load_capturas_filtered(
+                st.session_state.capturas_cache_buster,
+                uid=st.session_state.user.id, is_admin_flag=ADMIN_FLAG, scope="all",
+                date_from=mes_cong, date_to_exclusive=mes_cong_fin,
+                asesor=asesor_param, tipo_bau=tipo_param_det
+            )
+
+        # Mostrar tabla con asesor incluido
+        if not df_det.empty:
+            df_det = df_det.copy()
+            if "asesor" in df_det.columns:
+                df_det = df_det[["asesor","cliente","producto","tipo","estatus","fecha","referenciador","monto_estimado","monto_real"]]
+            st.dataframe(df_det, use_container_width=True)
+        else:
+            st.info("Sin registros para el filtro seleccionado.")
+
 
         # ===================== 🗑️ Borrado puntual por ADMIN (registros del asesor seleccionado) =====================
         st.markdown("#### Borrar registros del asesor seleccionado (ADMIN)")
