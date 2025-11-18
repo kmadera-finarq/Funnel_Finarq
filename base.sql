@@ -36,7 +36,7 @@ create table if not exists public.capturas (
   monto_esperado numeric(14,2) not null,
   mes_cierre_esperado date not null,    -- usar 1º de mes
   fecha_visita date,                    -- fecha real de visita
-  tipo_bau text not null default 'Nuevo' check (tipo_bau in ('BAU','Nuevo')),
+  tipo text not null default 'Nuevo' check (tipo in ('BAU','Nuevo')),
   estatus text not null default 'Prospecto' check (estatus in ('Prospecto','Propuesta','Documentación','Cliente')),
   prob_ajustada numeric check (prob_ajustada >= 0 and prob_ajustada <= 1)
 );
@@ -55,10 +55,10 @@ alter table public.capturas drop constraint if exists capturas_estatus_check;
 alter table public.capturas add constraint capturas_estatus_check check (estatus in ('Prospecto','Propuesta','Documentación','Cliente'));
 alter table public.capturas add column if not exists referencia_cliente text;
 alter table public.capturas add column if not exists fecha_visita date;
-alter table public.capturas add column if not exists tipo_bau text;
-update public.capturas set tipo_bau = coalesce(tipo_bau,'Nuevo');
-alter table public.capturas drop constraint if exists capturas_tipo_bau_check;
-alter table public.capturas add constraint capturas_tipo_bau_check check (tipo_bau in ('BAU','Nuevo'));
+alter table public.capturas add column if not exists tipo text;
+update public.capturas set tipo = coalesce(tipo,'Nuevo');
+alter table public.capturas drop constraint if exists capturas_tipo_check;
+alter table public.capturas add constraint capturas_tipo_check check (tipo in ('BAU','Nuevo'));
 
 -- RLS
 alter table public.capturas enable row level security;
