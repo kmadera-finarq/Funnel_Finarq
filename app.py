@@ -518,19 +518,51 @@ if not ADMIN_FLAG_GLOBAL:
             mes_inicio = st.date_input("Mes a analizar", value=date.today().replace(day=1), key="mes_indiv").replace(day=1)
         with colf2:
             tipo_sel = st.radio("Tipo de cliente", ["Todos","Nuevo","BAU"], horizontal=True)
-
-        mes_fin_excl = mes_inicio + relativedelta(months=1)
+       
+       # -------- Filtros del asesor --------
         tipo_param = None if tipo_sel == "Todos" else tipo_sel
 
-        df_f = load_capturas_filtered(
-            st.session_state.capturas_cache_buster,
-            uid=st.session_state.user.id, is_admin_flag=ADMIN_FLAG, scope="mine",
-            date_from=mes_inicio, date_to_exclusive=mes_fin_excl,
-            tipo_bau=tipo_param
+        estatus_sel = st.selectbox(
+            "Estatus",
+            ["Todos", "Acercamiento", "Propuesta", "Documentación", "Cliente", "Cancelado"],
+            key="estatus_filtro_asesor"
         )
+        estatus_param = None if estatus_sel == "Todos" else estatus_sel
+
+        # ======== HISTORIAL (ASESOR) — con opción para ver TODO el histórico =========
 
         st.markdown("#### Historial")
-        st.dataframe(df_public_view(df_f), width="stretch")
+
+        ver_todo_asesor = st.checkbox("🔍 Ver todo mi histórico (sin filtro de fechas)", value=False)
+
+        if ver_todo_asesor:
+            # sin filtro de fechas
+            df_f = load_capturas_filtered(
+                st.session_state.capturas_cache_buster,
+                uid=st.session_state.user.id,
+                is_admin_flag=False,
+                scope="mine",
+                date_from=None,
+                date_to_exclusive=None,
+                tipo=tipo_param,
+                estatus=estatus_param
+            )
+        else:
+            mes_fin_excl = mes_inicio + relativedelta(months=1)
+            df_f = load_capturas_filtered(
+                st.session_state.capturas_cache_buster,
+                uid=st.session_state.user.id,
+                is_admin_flag=False,
+                scope="mine",
+                date_from=mes_inicio,
+                date_to_exclusive=mes_fin_excl,
+                tipo=tipo_param,
+                estatus=estatus_param
+            )
+
+        st.dataframe(df_public_view(df_f), use_container_width=True)
+
+        
 
         # Métricas (Clientes/Total)
         if df_f.empty:
