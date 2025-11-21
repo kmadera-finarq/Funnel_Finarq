@@ -666,12 +666,25 @@ if not ADMIN_FLAG_GLOBAL:
             )
 
             # Eje X con rango del mes y slider/zoom cómodo
-            fig.update_xaxes(
-                range=[mes_inicio, mes_fin_excl - timedelta(days=1)],
-                showgrid=False,
-                tickformat="%d-%b",
-                rangeslider=dict(visible=True)
-            )
+            # Eje X con rango dinámico (mes o histórico)
+            if ver_todo_asesor:
+                fecha_min = dfg["fecha"].min()
+                fecha_max = dfg["fecha"].max()
+                fig.update_xaxes(
+                    range=[fecha_min, fecha_max],
+                    showgrid=False,
+                    tickformat="%d-%b",
+                    rangeslider=dict(visible=True)
+                )
+            else:
+                fig.update_xaxes(
+                    range=[mes_inicio, mes_fin_excl - timedelta(days=1)],
+                    showgrid=False,
+                    tickformat="%d-%b",
+                    rangeslider=dict(visible=True)
+                )
+
+            
             # Eje Y con formato y pequeña separación superior
             fig.update_yaxes(tickprefix="$", separatethousands=True)
 
