@@ -362,9 +362,11 @@ def conversion_closed_over_total(total_reg: int, clientes: int):
 
 # ---- Vista pública para tablas simples ----
 DISPLAY_COLS = [
+    "asesor",  # ✔️ nueva primera columna
     "cliente","producto","tipo","estatus","fecha","referenciador",
     "monto_estimado","monto_real"
 ]
+
 def df_public_view(df: pd.DataFrame) -> pd.DataFrame:
     if df is None or df.empty:
         return df
@@ -810,6 +812,8 @@ with TAB_CONG:
         st.info("Solo administradores pueden ver el visor.")
     else:
         st.subheader("Resumen por asesor")
+        
+        ver_todo_admin = st.checkbox("🔍 Ver todo el histórico (todos los asesores)", value=False)
 
         col1, col2 = st.columns([1,1])
         with col1:
@@ -822,12 +826,23 @@ with TAB_CONG:
         tipo_cong_param = None if tipo_cong == "Todos" else tipo_cong
 
         # Cargar mes (todos los asesores)
-        df_month = load_capturas_filtered(
-            st.session_state.capturas_cache_buster,
-            uid=st.session_state.user.id, is_admin_flag=ADMIN_FLAG, scope="all",
-            date_from=mes_cong, date_to_exclusive=mes_cong_fin,
-            tipo=tipo_cong_param
-        )
+        if ver_todo_admin:
+            df_month = load_capturas_filtered(
+                st.session_state.capturas_cache_buster,
+                uid=st.session_state.user.id, is_admin_flag=ADMIN_FLAG, scope="all",
+                date_from=None,
+                date_to_exclusive=None,
+                tipo=tipo_cong_param
+            )
+        else:
+            df_month = load_capturas_filtered(
+                st.session_state.capturas_cache_buster,
+                uid=st.session_state.user.id, is_admin_flag=ADMIN_FLAG, scope="all",
+                date_from=mes_cong,
+                date_to_exclusive=mes_cong_fin,
+                tipo=tipo_cong_param
+            )
+
 
         # ---- Resumen por asesor
         st.markdown("### Resumen por asesor")
