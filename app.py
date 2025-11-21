@@ -411,7 +411,7 @@ if not ADMIN_FLAG_GLOBAL:
         productos = load_productos()
 
         REFERENCIADORES = [
-            "Andrea", "Ángel", "Angie", "Ariadna", "César", "Cornelio", "Eduardo",
+            "Andrea", "Amanda", "Ángel", "Angie", "Ariadna", "César", "Cornelio", "Eduardo",
             "Gilberto", "Jorge", "Karen", "Lupita", "Mafer", "Marco",
             "Paco", "Pepe", "Ricardo", "Vania", "Ximena",
         ]
