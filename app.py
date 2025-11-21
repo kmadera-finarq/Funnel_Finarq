@@ -612,9 +612,18 @@ if not ADMIN_FLAG_GLOBAL:
             daily["estimado"] = pd.to_numeric(daily["estimado"], errors="coerce").fillna(0.0)
             daily["real"]     = pd.to_numeric(daily["real"], errors="coerce").fillna(0.0)
 
-            # Rango completo del mes para continuidad de líneas
-            full_idx = pd.date_range(start=mes_inicio, end=mes_fin_excl - timedelta(days=1), freq="D")
+            # Rango completo de fechas para continuidad de líneas
+            if ver_todo_asesor:
+                # usar fechas reales del histórico completo
+                fecha_min = dfg["fecha"].min()
+                fecha_max = dfg["fecha"].max()
+                full_idx = pd.date_range(start=fecha_min, end=fecha_max, freq="D")
+            else:
+                # rango del mes seleccionado
+                full_idx = pd.date_range(start=mes_inicio, end=mes_fin_excl - timedelta(days=1), freq="D")
+
             daily = daily.reindex(full_idx, fill_value=0.0)
+            
 
             # Toggle acumulado
             acumular = st.checkbox("Mostrar acumulado", value=True, help="Activa para ver líneas acumuladas del mes.")
