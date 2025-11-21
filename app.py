@@ -901,13 +901,32 @@ with TAB_CONG:
         asesor_param = None if ases_sel == "Todos" else ases_sel
         tipo_param_det = None if tipo_sel == "Todos" else tipo_sel
 
-        df_det = load_capturas_filtered(
-            st.session_state.capturas_cache_buster,
-            uid=st.session_state.user.id, is_admin_flag=ADMIN_FLAG, scope="all",
-            date_from=mes_cong, date_to_exclusive=mes_cong_fin,
-            asesor=asesor_param, tipo=tipo_param_det
-        )
+        # ===== Registros por asesor (con opción TODO el histórico) =====
+        if ver_todo_admin:
+            df_det = load_capturas_filtered(
+                st.session_state.capturas_cache_buster,
+                uid=st.session_state.user.id,
+                is_admin_flag=ADMIN_FLAG,
+                scope="all",
+                date_from=None,
+                date_to_exclusive=None,
+                asesor=asesor_param,
+                tipo=tipo_param_det
+            )
+        else:
+            df_det = load_capturas_filtered(
+                st.session_state.capturas_cache_buster,
+                uid=st.session_state.user.id,
+                is_admin_flag=ADMIN_FLAG,
+                scope="all",
+                date_from=mes_cong,
+                date_to_exclusive=mes_cong_fin,
+                asesor=asesor_param,
+                tipo=tipo_param_det
+            )
+
         st.dataframe(df_public_view(df_det), width="stretch")
+
 
         # ===================== 📝 Crear observación por ASESOR =====================
         st.markdown("### 📝 Crear observación para un asesor")
