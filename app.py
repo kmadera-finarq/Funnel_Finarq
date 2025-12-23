@@ -766,12 +766,7 @@ if not ADMIN_FLAG_GLOBAL:
                         old_status = src_status.get(str(rid_str))
                         old_real   = src_real.get(str(rid_str))
 
-                        # Si queda en 'Cliente', exigir monto_real > 0
-                        if new_status == "Cliente":
-                            nr = _num_norm(new_real_val)
-                            if nr is None or nr <= 0:
-                                invalid_rows.append((rid_str, "Debes capturar el ingreso REAL (> 0)"))
-                                continue
+                    
 
                         # Detectar cambios
                         upd = {}
