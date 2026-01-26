@@ -239,8 +239,10 @@ def _query_capturas(
         required_cols = [
             "id","fecha","referenciador","cliente","producto","tipo",
             "estatus","asesor","ts","user_id",
-            "monto_estimado","monto_real"  # NUEVO
-        ]
+            "monto_estimado","monto_real",
+            "nota"  # NUEVO
+            ]
+
         for c in required_cols:
             if c not in df.columns:
                 df[c] = pd.NA
@@ -256,7 +258,7 @@ def _query_capturas(
     else:
         df = pd.DataFrame(columns=[
             "id","fecha","referenciador","cliente","producto","tipo",
-            "estatus","asesor","ts","user_id","monto_estimado","monto_real"
+            "estatus","asesor","ts","user_id","monto_estimado","monto_real","nota"
         ])
     return df
 
@@ -380,10 +382,11 @@ def conversion_closed_over_total(total_reg: int, clientes: int):
 
 # ---- Vista pública para tablas simples ----
 DISPLAY_COLS = [
-    "asesor",  # ✔️ nueva primera columna
-    "cliente","producto","tipo","estatus","fecha","referenciador",
-    "monto_estimado","monto_real"
+    "asesor","cliente","producto","tipo","estatus","fecha","referenciador",
+    "monto_estimado","monto_real",
+    "nota"  # NUEVO
 ]
+
 
 def df_public_view(df: pd.DataFrame) -> pd.DataFrame:
     if df is None or df.empty:
@@ -449,11 +452,17 @@ if not ADMIN_FLAG_GLOBAL:
             tipo = st.selectbox("Tipo de cliente *", ["Nuevo","BAU"])
             estatus = st.selectbox("Estatus *", ESTATUS_OPTIONS)
 
+
+
             # ---- NUEVO: monto estimado
             monto_estimado = st.number_input(
                 "Ingreso estimado (MXN) *",
                 min_value=0.0, step=100.0, format="%.2f", key="monto_estimado_form"
             )
+
+            nota = st.text_area("Notas / comentarios (opcional)", placeholder="Ej. Cliente pidió llamada el viernes...")
+
+
             ok = st.form_submit_button("Guardar", type="primary", width="stretch")
 
         if ok:
@@ -469,7 +478,8 @@ if not ADMIN_FLAG_GLOBAL:
                     "producto": producto,
                     "tipo": tipo,
                     "estatus": estatus,
-                    "monto_estimado": float(monto_estimado),  # NUEVO
+                    "monto_estimado": float(monto_estimado),  
+                    "nota": (nota.strip() or None),
                 }
                 # (Opcional) si quieres obligar 'monto_real' al crear en 'Cliente', añade inputs y validación aquí.
                 try:
