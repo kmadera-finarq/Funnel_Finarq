@@ -240,7 +240,7 @@ def _query_capturas(
             "id","fecha","referenciador","cliente","producto","tipo",
             "estatus","asesor","ts","user_id",
             "monto_estimado","monto_real",
-            "nota"  # NUEVO
+            "nota","prob_cierre"
             ]
 
         for c in required_cols:
@@ -251,14 +251,14 @@ def _query_capturas(
             if df[c].dtype != object:
                 df[c] = df[c].astype("string")
         # numéricos seguros
-        for numc in ("monto_estimado","monto_real"):
+        for numc in ("monto_estimado","monto_real","prob_cierre"):
             if numc not in df.columns:
                 df[numc] = pd.NA
             df[numc] = pd.to_numeric(df[numc], errors="coerce")
     else:
         df = pd.DataFrame(columns=[
             "id","fecha","referenciador","cliente","producto","tipo",
-            "estatus","asesor","ts","user_id","monto_estimado","monto_real","nota"
+            "estatus","asesor","ts","user_id","monto_estimado","monto_real","nota", "prob_cierre"
         ])
     return df
 
@@ -462,6 +462,11 @@ if not ADMIN_FLAG_GLOBAL:
 
             nota = st.text_area("Notas / comentarios (opcional)", placeholder="Ej. Cliente pidió llamada el viernes...")
 
+            prob_cierre = st.number_input(
+                "Probabilidad de cierre (%)",
+                min_value=0.0, max_value=100.0, step=1.0, value=50.0,
+                key="prob_cierre_form"
+            )
 
             ok = st.form_submit_button("Guardar", type="primary", width="stretch")
 
@@ -480,6 +485,7 @@ if not ADMIN_FLAG_GLOBAL:
                     "estatus": estatus,
                     "monto_estimado": float(monto_estimado),  
                     "nota": (nota.strip() or None),
+                    "prob_cierre": float(prob_cierre),
                 }
                 # (Opcional) si quieres obligar 'monto_real' al crear en 'Cliente', añade inputs y validación aquí.
                 try:
@@ -780,7 +786,7 @@ if not ADMIN_FLAG_GLOBAL:
         if df_f.empty:
             st.write("—")
         else:
-            cols_edit = ["id","cliente","producto","tipo","estatus","fecha","referenciador","monto_estimado","monto_real","nota"]
+            cols_edit = ["id","cliente","producto","tipo","estatus","fecha","referenciador","monto_estimado","monto_real","nota","prob_cierre"]
             for c in cols_edit:
                 if c not in df_f.columns:
                     df_f[c] = pd.NA
@@ -790,7 +796,7 @@ if not ADMIN_FLAG_GLOBAL:
             df_edit_src["id_str"] = df_edit_src["id"].astype(str)
             df_view = df_edit_src.set_index("id_str")[[
                 "cliente","producto","tipo","estatus","fecha","referenciador",
-                "monto_estimado","monto_real","nota"
+                "monto_estimado","monto_real","nota", "prob_cierre"
             ]]
 
             edited = st.data_editor(
@@ -811,6 +817,8 @@ if not ADMIN_FLAG_GLOBAL:
                     "monto_estimado": st.column_config.NumberColumn("Estimado (MXN)", disabled=True, format="%.2f"),
                     "monto_real": st.column_config.NumberColumn("Real (MXN)", step=100.0, format="%.2f"),
                     "nota": st.column_config.TextColumn("Notas", help="Notas internas del asesor", width="large"),
+                    "prob_cierre": st.column_config.NumberColumn("Prob. cierre (%)", min_value=0.0, max_value=100.0, step=1.0, format="%.0f"),
+
 
                 },
                 disabled=["cliente","producto","tipo","fecha","referenciador"], 
@@ -823,6 +831,8 @@ if not ADMIN_FLAG_GLOBAL:
                     src_status = {str(r["id"]): r["estatus"] for _, r in df_edit_src.iterrows()}
                     src_real   = {str(r["id"]): r.get("monto_real") for _, r in df_edit_src.iterrows()}
                     src_nota = {str(r["id"]): r.get("nota") for _, r in df_edit_src.iterrows()}
+                    src_prob = {str(r["id"]): r.get("prob_cierre") for _, r in df_edit_src.iterrows()}
+
 
 
                     def _num_norm(x):
@@ -847,6 +857,16 @@ if not ADMIN_FLAG_GLOBAL:
                         old_real   = src_real.get(str(rid_str))
                         old_nota = src_nota.get(str(rid_str))
                         new_nota = row.get("nota")
+                        old_prob = src_prob.get(str(rid_str))
+                        new_prob = row.get("prob_cierre")
+
+                        if _num_norm(new_prob) != _num_norm(old_prob):
+                            p = _num_norm(new_prob)
+                            if p is not None:
+                                p = max(0.0, min(100.0, p))
+                            upd["prob_cierre"] = p
+                            changed = True
+
 
 
                     
