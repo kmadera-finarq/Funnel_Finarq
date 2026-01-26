@@ -780,7 +780,7 @@ if not ADMIN_FLAG_GLOBAL:
         if df_f.empty:
             st.write("—")
         else:
-            cols_edit = ["id","cliente","producto","tipo","estatus","fecha","referenciador","monto_estimado","monto_real"]
+            cols_edit = ["id","cliente","producto","tipo","estatus","fecha","referenciador","monto_estimado","monto_real","nota"]
             for c in cols_edit:
                 if c not in df_f.columns:
                     df_f[c] = pd.NA
@@ -790,7 +790,7 @@ if not ADMIN_FLAG_GLOBAL:
             df_edit_src["id_str"] = df_edit_src["id"].astype(str)
             df_view = df_edit_src.set_index("id_str")[[
                 "cliente","producto","tipo","estatus","fecha","referenciador",
-                "monto_estimado","monto_real"
+                "monto_estimado","monto_real","nota"
             ]]
 
             edited = st.data_editor(
@@ -810,8 +810,10 @@ if not ADMIN_FLAG_GLOBAL:
                     "referenciador": st.column_config.TextColumn("Referenciador", disabled=True),
                     "monto_estimado": st.column_config.NumberColumn("Estimado (MXN)", disabled=True, format="%.2f"),
                     "monto_real": st.column_config.NumberColumn("Real (MXN)", step=100.0, format="%.2f"),
+                    "nota": st.column_config.TextColumn("Notas", help="Notas internas del asesor", width="large"),
+
                 },
-                disabled=["cliente","producto","tipo","fecha","referenciador","monto_estimado"],
+                disabled=["cliente","producto","tipo","fecha","referenciador"], 
                 hide_index=True,
             )
 
@@ -820,12 +822,20 @@ if not ADMIN_FLAG_GLOBAL:
                     # Mapas originales
                     src_status = {str(r["id"]): r["estatus"] for _, r in df_edit_src.iterrows()}
                     src_real   = {str(r["id"]): r.get("monto_real") for _, r in df_edit_src.iterrows()}
+                    src_nota = {str(r["id"]): r.get("nota") for _, r in df_edit_src.iterrows()}
+
 
                     def _num_norm(x):
                         try:
                             return None if x is None or pd.isna(x) else float(x)
                         except Exception:
                             return None
+
+                    def _txt_norm(x):
+                        if x is None or pd.isna(x):
+                            return None
+                        s = str(x).strip()
+                        return s if s else None
 
                     changes = []      # [(id, dict_update)]
                     invalid_rows = [] # [(id, reason)]
@@ -835,6 +845,9 @@ if not ADMIN_FLAG_GLOBAL:
                         new_real_val = row.get("monto_real")
                         old_status = src_status.get(str(rid_str))
                         old_real   = src_real.get(str(rid_str))
+                        old_nota = src_nota.get(str(rid_str))
+                        new_nota = row.get("nota")
+
 
                     
 
@@ -846,6 +859,9 @@ if not ADMIN_FLAG_GLOBAL:
                             changed = True
                         if _num_norm(new_real_val) != _num_norm(old_real):
                             upd["monto_real"] = _num_norm(new_real_val)
+                            changed = True
+                        if _txt_norm(new_nota) != _txt_norm(old_nota):
+                            upd["nota"] = _txt_norm(new_nota)
                             changed = True
 
                         if changed:
