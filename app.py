@@ -588,20 +588,24 @@ if not ADMIN_FLAG_GLOBAL:
 
         # Métricas (Clientes/Total)
         if df_f.empty:
-            total_reg = acerc = propuestas = docs = clientes = 0
+            total_reg = acerc = propuestas = docs = clientes = cancelados = 0
         else:
             total_reg  = len(df_f)
             acerc      = int((df_f["estatus"] == "Acercamiento").sum())
             propuestas = int((df_f["estatus"] == "Propuesta").sum())
             docs       = int((df_f["estatus"] == "Documentación").sum())
             clientes   = int((df_f["estatus"] == "Cliente").sum())
+            cancelados = int((df_f["estatus"] == "Cancelado").sum())
 
-        c0, c1, c2, c3, c4 = st.columns(5)
+
+        c0, c1, c2, c3, c4, c5 = st.columns(6)
         c0.metric("Total registrados", f"{total_reg}")
         c1.metric("Acercamientos", f"{acerc}")
         c2.metric("Propuestas", f"{propuestas}")
         c3.metric("Documentación", f"{docs}")
         c4.metric("Clientes", f"{clientes}")
+        c5.metric("Cancelados", f"{cancelados}")
+
 
                 # ===================== Gráfica de pastel: estatus =====================
         st.markdown("#### Distribución de estatus")
@@ -609,23 +613,26 @@ if not ADMIN_FLAG_GLOBAL:
         if df_f.empty:
             st.info("Sin datos para graficar.")
         else:
+            # Por si acaso ESTATUS_OPTIONS no existe (fallback)
+            try:
+                _opts = ESTATUS_OPTIONS
+            except NameError:
+                _opts = ["Acercamiento","Propuesta","Documentación","Cliente","Cancelado"]
+
             vc = df_f["estatus"].fillna("—").value_counts()
 
-            labels = [s for s in ESTATUS_OPTIONS if s in vc.index]
+            labels = [s for s in _opts if s in vc.index]
             values = [int(vc.get(s, 0)) for s in labels]
 
-            fig_pie = go.Figure(
-                data=[
-                    go.Pie(
-                        labels=labels,
-                        values=values,
-                        hole=0.35,  # donut; si quieres pastel normal pon hole=0
-                        textinfo="label+percent",
-                        hovertemplate="<b>%{label}</b><br>Registros: %{value}<br>%{percent}<extra></extra>",
-                    )
-                ]
-            )
-
+            fig_pie = go.Figure(data=[
+                go.Pie(
+                    labels=labels,
+                    values=values,
+                    hole=0.35,
+                    textinfo="label+percent",
+                    hovertemplate="<b>%{label}</b><br>Registros: %{value}<br>%{percent}<extra></extra>",
+                )
+            ])
             fig_pie.update_layout(
                 template="plotly_white",
                 height=380,
@@ -633,7 +640,7 @@ if not ADMIN_FLAG_GLOBAL:
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
             )
 
-            st.plotly_chart(fig_pie, width="stretch")
+            st.plotly_chart(fig_pie, use_container_width=True)
 
 
         # ===== NUEVO: métricas de montos por asesor =====
