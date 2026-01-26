@@ -336,7 +336,25 @@ def _get_asesores_map(limit: int = 10000):
     return ases_map
 
 # Orden lógico de estatus
-ESTATUS_ORDER = {"Acercamiento": 1, "Propuesta": 2, "Documentación": 3, "Cliente": 4}
+# Opciones globales de estatus (UNIFICADAS)
+ESTATUS_OPTIONS = [
+    "Acercamiento",
+    "Propuesta",
+    "Documentación",
+    "Cliente",
+    "Cancelado"
+]
+
+# Orden lógico del funnel
+# Cancelado = 0 para que no cuente como avance
+ESTATUS_ORDER = {
+    "Acercamiento": 1,
+    "Propuesta": 2,
+    "Documentación": 3,
+    "Cliente": 4,
+    "Cancelado": 0
+}
+
 
 # ---------------------- MÉTRICA Y SEMÁFOROS ----------------------
 def get_thresholds():
@@ -429,7 +447,8 @@ if not ADMIN_FLAG_GLOBAL:
             )
             producto = st.selectbox("Producto *", productos)
             tipo = st.selectbox("Tipo de cliente *", ["Nuevo","BAU"])
-            estatus = st.selectbox("Estatus *", ["Acercamiento","Propuesta","Documentación","Cliente"])
+            estatus = st.selectbox("Estatus *", ESTATUS_OPTIONS)
+
             # ---- NUEVO: monto estimado
             monto_estimado = st.number_input(
                 "Ingreso estimado (MXN) *",
@@ -525,10 +544,11 @@ if not ADMIN_FLAG_GLOBAL:
         tipo_param = None if tipo_sel == "Todos" else tipo_sel
 
         estatus_sel = st.selectbox(
-            "Estatus",
-            ["Todos", "Acercamiento", "Propuesta", "Documentación", "Cliente", "Cancelado"],
-            key="estatus_filtro_asesor"
+        "Estatus",
+        ["Todos"] + ESTATUS_OPTIONS,
+        key="estatus_filtro_asesor"
         )
+
         estatus_param = None if estatus_sel == "Todos" else estatus_sel
 
         # ======== HISTORIAL (ASESOR) — con opción para ver TODO el histórico =========
@@ -582,6 +602,39 @@ if not ADMIN_FLAG_GLOBAL:
         c2.metric("Propuestas", f"{propuestas}")
         c3.metric("Documentación", f"{docs}")
         c4.metric("Clientes", f"{clientes}")
+
+                # ===================== Gráfica de pastel: estatus =====================
+        st.markdown("#### Distribución de estatus")
+
+        if df_f.empty:
+            st.info("Sin datos para graficar.")
+        else:
+            vc = df_f["estatus"].fillna("—").value_counts()
+
+            labels = [s for s in ESTATUS_OPTIONS if s in vc.index]
+            values = [int(vc.get(s, 0)) for s in labels]
+
+            fig_pie = go.Figure(
+                data=[
+                    go.Pie(
+                        labels=labels,
+                        values=values,
+                        hole=0.35,  # donut; si quieres pastel normal pon hole=0
+                        textinfo="label+percent",
+                        hovertemplate="<b>%{label}</b><br>Registros: %{value}<br>%{percent}<extra></extra>",
+                    )
+                ]
+            )
+
+            fig_pie.update_layout(
+                template="plotly_white",
+                height=380,
+                margin=dict(l=10, r=10, t=40, b=10),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+            )
+
+            st.plotly_chart(fig_pie, width="stretch")
+
 
         # ===== NUEVO: métricas de montos por asesor =====
         sum_est = float(df_f["monto_estimado"].fillna(0).sum()) if not df_f.empty else 0.0
@@ -730,7 +783,7 @@ if not ADMIN_FLAG_GLOBAL:
                 column_config={
                     "estatus": st.column_config.SelectboxColumn(
                         "Estatus",
-                        options=["Acercamiento","Propuesta","Documentación","Cliente"],
+                        options=ESTATUS_OPTIONS,
                         required=True,
                     ),
                     "cliente": st.column_config.TextColumn("Cliente", disabled=True),
