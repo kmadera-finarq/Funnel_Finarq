@@ -1129,9 +1129,15 @@ with TAB_CONG:
                 st.info("Sin datos para el periodo seleccionado.")
             else:
                 umbral = 51.0
+                
+                df_month = df_month.copy()
+                df_month["asesor"] = df_month["asesor"].astype("string")
+                df_month["asesor"] = df_month["asesor"].fillna("—").replace("", "—")
+
 
                 for ases, chunk in df_month.groupby("asesor"):
-                    ases_name = ases if ases not in (None, pd.NA) else "—"
+                    ases_name = "—" if (ases is None or pd.isna(ases) or str(ases).strip() == "") else str(ases)
+
 
                     # Ingreso esperado: suma monto_estimado donde prob_cierre > 51
                     tmp = chunk.copy()
