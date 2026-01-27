@@ -337,6 +337,14 @@ def _get_asesores_map(limit: int = 10000):
             ases_map[alias] = uid
     return ases_map
 
+def _get_metas_mes(periodo: date):
+    _attach_postgrest_token_if_any()
+    def _call():
+        return supabase.table("metas_asesor").select("*").eq("periodo", periodo.isoformat()).execute()
+    res = _retry_on_jwt_expired(_call)
+    return pd.DataFrame(res.data or [])
+
+
 # Orden lógico de estatus
 # Opciones globales de estatus (UNIFICADAS)
 ESTATUS_OPTIONS = [
@@ -356,6 +364,14 @@ ESTATUS_ORDER = {
     "Cliente": 4,
     "Cancelado": 0
 }
+
+def _quarter_bounds(d: date):
+    q = (d.month - 1) // 3  # 0..3
+    start_month = q * 3 + 1
+    start = date(d.year, start_month, 1)
+    end = start + relativedelta(months=3)
+    return start, end
+
 
 
 # ---------------------- MÉTRICA Y SEMÁFOROS ----------------------
@@ -556,6 +572,13 @@ if not ADMIN_FLAG_GLOBAL:
         with colf2:
             tipo_sel = st.radio("Tipo de cliente", ["Todos","Nuevo","BAU"], horizontal=True)
        
+        periodo_sel = st.radio(
+            "Periodo",
+            ["Mes", "Trimestre", "Todo"],
+            horizontal=True,
+            key="periodo_asesor"
+)
+
        # -------- Filtros del asesor --------
         tipo_param = None if tipo_sel == "Todos" else tipo_sel
 
@@ -573,30 +596,26 @@ if not ADMIN_FLAG_GLOBAL:
 
         ver_todo_asesor = st.checkbox("🔍 Ver todo mi histórico (sin filtro de fechas)", value=False)
 
-        if ver_todo_asesor:
-            # sin filtro de fechas
-            df_f = load_capturas_filtered(
-                st.session_state.capturas_cache_buster,
-                uid=st.session_state.user.id,
-                is_admin_flag=False,
-                scope="mine",
-                date_from=None,
-                date_to_exclusive=None,
-                tipo=tipo_param,
-                estatus=estatus_param
-            )
-        else:
-            mes_fin_excl = mes_inicio + relativedelta(months=1)
-            df_f = load_capturas_filtered(
-                st.session_state.capturas_cache_buster,
-                uid=st.session_state.user.id,
-                is_admin_flag=False,
-                scope="mine",
-                date_from=mes_inicio,
-                date_to_exclusive=mes_fin_excl,
-                tipo=tipo_param,
-                estatus=estatus_param
-            )
+        if periodo_sel == "Todo":
+            date_from = None
+            date_to_exclusive = None
+        elif periodo_sel == "Trimestre":
+            date_from, date_to_exclusive = _quarter_bounds(mes_inicio)
+        else:  # Mes
+            date_from = mes_inicio
+            date_to_exclusive = mes_inicio + relativedelta(months=1)
+
+        df_f = load_capturas_filtered(
+            st.session_state.capturas_cache_buster,
+            uid=st.session_state.user.id,
+            is_admin_flag=False,
+            scope="mine",
+            date_from=date_from,
+            date_to_exclusive=date_to_exclusive,
+            tipo=tipo_param,
+            estatus=estatus_param   
+        )
+
 
         st.dataframe(df_public_view(df_f), use_container_width=True)
 
@@ -621,6 +640,28 @@ if not ADMIN_FLAG_GLOBAL:
         c3.metric("Documentación", f"{docs}")
         c4.metric("Clientes", f"{clientes}")
         c5.metric("Cancelados", f"{cancelados}")
+
+        # ===================== KPI: Ingreso total esperado (prob > 51%) =====================
+        st.markdown("### Ingreso total esperado")
+
+        umbral = 51.0
+
+        df_tmp = df_f.copy()
+        df_tmp["prob_cierre"] = pd.to_numeric(df_tmp["prob_cierre"], errors="coerce")
+        df_tmp["monto_estimado"] = pd.to_numeric(df_tmp["monto_estimado"], errors="coerce")
+
+        ingreso_esperado_total = (
+            df_tmp.loc[df_tmp["prob_cierre"] > umbral, "monto_estimado"]
+            .fillna(0)
+            .sum()
+            if not df_tmp.empty
+            else 0.0
+        )
+
+        st.metric(
+            f"Ingreso total esperado (prob > {int(umbral)}%)",
+            f"${ingreso_esperado_total:,.2f}"
+        )
 
 
                 # ===================== Gráfica de pastel: estatus =====================
@@ -745,22 +786,21 @@ if not ADMIN_FLAG_GLOBAL:
 
             # Eje X con rango del mes y slider/zoom cómodo
             # Eje X con rango dinámico (mes o histórico)
-            if ver_todo_asesor:
-                fecha_min = dfg["fecha"].min()
-                fecha_max = dfg["fecha"].max()
-                fig.update_xaxes(
-                    range=[fecha_min, fecha_max],
-                    showgrid=False,
-                    tickformat="%d-%b",
-                    rangeslider=dict(visible=True)
-                )
+            # Rango del eje X según el periodo seleccionado
+            if date_from is not None and date_to_exclusive is not None:
+                x_start = date_from
+                x_end = date_to_exclusive - timedelta(days=1)
             else:
-                fig.update_xaxes(
-                    range=[mes_inicio, mes_fin_excl - timedelta(days=1)],
-                    showgrid=False,
-                    tickformat="%d-%b",
-                    rangeslider=dict(visible=True)
-                )
+                x_start = dfg["fecha"].min().date() if not dfg.empty else mes_inicio
+                x_end = dfg["fecha"].max().date() if not dfg.empty else mes_inicio
+
+            fig.update_xaxes(
+                range=[x_start, x_end],
+                showgrid=False,
+                tickformat="%d-%b",
+                rangeslider=dict(visible=True)
+            )
+
 
             
             # Eje Y con formato y pequeña separación superior
@@ -913,6 +953,36 @@ with TAB_CONG:
         st.info("Solo administradores pueden ver el visor.")
     else:
         st.subheader("Resumen por asesor")
+        st.markdown("### 🎯 Asignar meta mensual")
+
+        ases_map = _get_asesores_map()
+        asesores_select = sorted(list(ases_map.keys()))
+
+        c1, c2, c3 = st.columns([1,1,1])
+        with c1:
+            asesor_meta = st.selectbox("Asesor", asesores_select, key="meta_asesor")
+        with c2:
+            mes_meta = st.date_input("Mes (meta)", value=date.today().replace(day=1), key="meta_mes").replace(day=1)
+        with c3:
+            meta_mxn = st.number_input("Meta (MXN)", min_value=0.0, step=1000.0, format="%.2f", key="meta_val")
+
+        if st.button("Guardar meta", type="primary", key="btn_guardar_meta"):
+            try:
+                payload = {
+                    "asesor_user_id": ases_map[asesor_meta],
+                    "asesor_alias": asesor_meta,
+                    "periodo": mes_meta.isoformat(),
+                    "meta_mxn": float(meta_mxn)
+                }
+                def _upsert():
+                    return supabase.table("metas_asesor").upsert(payload, on_conflict="asesor_user_id,periodo").execute()
+                _retry_on_jwt_expired(_upsert)
+                st.success("Meta guardada ✅")
+            except APIError as e:
+                st.error(f"No se pudo guardar: {_format_api_error(e)}")
+            except Exception as e:
+                st.error(f"No se pudo guardar: {e}")
+
         
         ver_todo_admin = st.checkbox("🔍 Ver todo el histórico (todos los asesores)", value=False)
 
@@ -954,7 +1024,15 @@ with TAB_CONG:
             if "asesor" not in df_month.columns:
                 df_month["asesor"] = pd.NA
 
+
             resumen_rows = []
+
+            df_metas = _get_metas_mes(mes_cong)
+            meta_map = {}
+            if not df_metas.empty:
+                for _, r in df_metas.iterrows():
+                    meta_map[str(r.get("asesor_alias"))] = float(r.get("meta_mxn") or 0.0)
+
             for ases, chunk in df_month.groupby("asesor"):
                 total_reg = len(chunk)
                 ac = int((chunk["estatus"] == "Acercamiento").sum())
@@ -965,6 +1043,15 @@ with TAB_CONG:
 
                 sum_est = float(chunk["monto_estimado"].fillna(0).sum())
                 sum_real = float(chunk.loc[chunk["estatus"]=="Cliente","monto_real"].fillna(0).sum())
+
+                umbral = 51.0
+                tmp = chunk.copy()
+                tmp["prob_cierre"] = pd.to_numeric(tmp["prob_cierre"], errors="coerce")
+                tmp["monto_estimado"] = pd.to_numeric(tmp["monto_estimado"], errors="coerce")
+
+                esperado = float(tmp.loc[tmp["prob_cierre"] > umbral, "monto_estimado"].fillna(0).sum())
+                meta = float(meta_map.get(str(ases), 0.0))
+                brecha = meta - esperado
 
                 resumen_rows.append({
                     "asesor": (ases if ases is not pd.NA and ases is not None else "—"),
@@ -977,6 +1064,10 @@ with TAB_CONG:
                     "Real (MXN)": round(sum_real, 2),
                     "Tasa de conversión (Clientes/Total) %": round(conv_pct, 2),
                     "Semáforo": light,
+                    "Meta (MXN)": round(meta, 2),
+                    "Esperado >51% (MXN)": round(esperado, 2),
+                    "Brecha (MXN)": round(brecha, 2),
+
                 })
             df_resumen = pd.DataFrame(resumen_rows).sort_values("asesor")
             st.dataframe(df_resumen, width="stretch")
