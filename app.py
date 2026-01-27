@@ -344,6 +344,21 @@ def _get_metas_mes(periodo: date):
     res = _retry_on_jwt_expired(_call)
     return pd.DataFrame(res.data or [])
 
+def _get_meta_asesor_sum(uid: str, date_from: date | None, date_to_exclusive: date | None) -> float:
+    _attach_postgrest_token_if_any()
+    def _call():
+        q = supabase.table("metas_asesor").select("meta_mxn,periodo").eq("asesor_user_id", uid)
+        if date_from is not None:
+            q = q.gte("periodo", date_from.isoformat())
+        if date_to_exclusive is not None:
+            q = q.lt("periodo", date_to_exclusive.isoformat())
+        return q.execute()
+    res = _retry_on_jwt_expired(_call)
+    df = pd.DataFrame(res.data or [])
+    if df.empty:
+        return 0.0
+    return float(pd.to_numeric(df["meta_mxn"], errors="coerce").fillna(0).sum())
+
 
 # Orden lógico de estatus
 # Opciones globales de estatus (UNIFICADAS)
@@ -398,9 +413,8 @@ def conversion_closed_over_total(total_reg: int, clientes: int):
 
 # ---- Vista pública para tablas simples ----
 DISPLAY_COLS = [
-    "asesor","cliente","producto","tipo","estatus","fecha","referenciador",
-    "monto_estimado","monto_real",
-    "nota"  # NUEVO
+    "asesor","cliente","producto","tipo","estatus","fecha","referenciador","prob_cierre",
+    "monto_estimado","monto_real","nota"
 ]
 
 
@@ -663,6 +677,13 @@ if not ADMIN_FLAG_GLOBAL:
             f"${ingreso_esperado_total:,.2f}"
         )
 
+        meta_total = _get_meta_asesor_sum(st.session_state.user.id, date_from, date_to_exclusive)
+
+        cA, cB = st.columns(2)
+        cA.metric("Meta del periodo (MXN)", f"${meta_total:,.2f}")
+        cB.metric(f"Ingreso esperado total (prob > 51%)", f"${ingreso_esperado_total:,.2f}")
+
+        st.metric("Brecha (Meta - Esperado)", f"${(meta_total - ingreso_esperado_total):,.2f}")
 
                 # ===================== Gráfica de pastel: estatus =====================
         st.markdown("#### Distribución de estatus")
@@ -834,9 +855,12 @@ if not ADMIN_FLAG_GLOBAL:
 
             # Usar ID como índice (oculto)
             df_edit_src["id_str"] = df_edit_src["id"].astype(str)
+
+            df_edit_src["Eliminar"] = False
+
             df_view = df_edit_src.set_index("id_str")[[
                 "cliente","producto","tipo","estatus","fecha","referenciador",
-                "monto_estimado","monto_real","nota", "prob_cierre"
+                "monto_estimado","monto_real","nota", "prob_cierre", "Eliminar"
             ]]
 
             edited = st.data_editor(
@@ -858,7 +882,7 @@ if not ADMIN_FLAG_GLOBAL:
                     "monto_real": st.column_config.NumberColumn("Real (MXN)", step=100.0, format="%.2f"),
                     "nota": st.column_config.TextColumn("Notas", help="Notas internas del asesor", width="large"),
                     "prob_cierre": st.column_config.NumberColumn("Prob. cierre (%)", min_value=0.0, max_value=100.0, step=1.0, format="%.0f"),
-
+                    "Eliminar": st.column_config.CheckboxColumn("Eliminar"),
 
                 },
                 disabled=["cliente","producto","tipo","fecha","referenciador"], 
@@ -888,7 +912,9 @@ if not ADMIN_FLAG_GLOBAL:
                         return s if s else None
 
                     changes = []      # [(id, dict_update)]
+                    to_delete = []
                     invalid_rows = [] # [(id, reason)]
+
 
                     for rid_str, row in edited.iterrows():
                         new_status = row["estatus"]
@@ -900,6 +926,11 @@ if not ADMIN_FLAG_GLOBAL:
                         old_prob = src_prob.get(str(rid_str))
                         new_prob = row.get("prob_cierre")
 
+                        if bool(row.get("Eliminar", False)) is True:
+                            to_delete.append(str(rid_str))
+                            continue
+
+
                         if _num_norm(new_prob) != _num_norm(old_prob):
                             p = _num_norm(new_prob)
                             if p is not None:
@@ -907,6 +938,12 @@ if not ADMIN_FLAG_GLOBAL:
                             upd["prob_cierre"] = p
                             changed = True
 
+                        if to_delete:
+                            for rid in to_delete:
+                                def _del():
+                                    # Seguridad: solo borrar registros del usuario actual
+                                    return supabase.table("capturas").delete().eq("id", rid).eq("user_id", user.id).execute()
+                                _retry_on_jwt_expired(_del)
 
 
                     
@@ -953,6 +990,14 @@ with TAB_CONG:
         st.info("Solo administradores pueden ver el visor.")
     else:
         st.subheader("Resumen por asesor")
+        
+        periodo_admin = st.radio(
+            "Periodo (admin)",
+            ["Mes", "Trimestre", "Acumulado"],
+            horizontal=True,
+            key="periodo_admin"
+        )
+
         st.markdown("### 🎯 Asignar meta mensual")
 
         ases_map = _get_asesores_map()
@@ -984,7 +1029,7 @@ with TAB_CONG:
                 st.error(f"No se pudo guardar: {e}")
 
         
-        ver_todo_admin = st.checkbox("🔍 Ver todo el histórico (todos los asesores)", value=False)
+        
 
         col1, col2 = st.columns([1,1])
         with col1:
@@ -996,23 +1041,25 @@ with TAB_CONG:
         mes_cong_fin = mes_cong + relativedelta(months=1)
         tipo_cong_param = None if tipo_cong == "Todos" else tipo_cong
 
-        # Cargar mes (todos los asesores)
-        if ver_todo_admin:
-            df_month = load_capturas_filtered(
-                st.session_state.capturas_cache_buster,
-                uid=st.session_state.user.id, is_admin_flag=ADMIN_FLAG, scope="all",
-                date_from=None,
-                date_to_exclusive=None,
-                tipo=tipo_cong_param
-            )
-        else:
-            df_month = load_capturas_filtered(
-                st.session_state.capturas_cache_buster,
-                uid=st.session_state.user.id, is_admin_flag=ADMIN_FLAG, scope="all",
-                date_from=mes_cong,
-                date_to_exclusive=mes_cong_fin,
-                tipo=tipo_cong_param
-            )
+        if periodo_admin == "Acumulado":
+            date_from = None
+            date_to_exclusive = None
+        elif periodo_admin == "Trimestre":
+            date_from, date_to_exclusive = _quarter_bounds(mes_cong)
+        else:  # Mes
+            date_from = mes_cong
+            date_to_exclusive = mes_cong + relativedelta(months=1)
+
+        df_month = load_capturas_filtered(
+            st.session_state.capturas_cache_buster,
+            uid=st.session_state.user.id,
+            is_admin_flag=ADMIN_FLAG,
+            scope="all",
+            date_from=date_from,
+            date_to_exclusive=date_to_exclusive,
+            tipo=tipo_cong_param
+        )
+
 
 
         # ---- Resumen por asesor
@@ -1040,6 +1087,8 @@ with TAB_CONG:
                 d  = int((chunk["estatus"] == "Documentación").sum())
                 c  = int((chunk["estatus"] == "Cliente").sum())
                 conv_pct, light = conversion_closed_over_total(total_reg, c)
+                avg_prob = float(pd.to_numeric(chunk["prob_cierre"], errors="coerce").dropna().mean()) if "prob_cierre" in chunk.columns else 0.0
+
 
                 sum_est = float(chunk["monto_estimado"].fillna(0).sum())
                 sum_real = float(chunk.loc[chunk["estatus"]=="Cliente","monto_real"].fillna(0).sum())
@@ -1067,10 +1116,46 @@ with TAB_CONG:
                     "Meta (MXN)": round(meta, 2),
                     "Esperado >51% (MXN)": round(esperado, 2),
                     "Brecha (MXN)": round(brecha, 2),
+                    "Prob. cierre promedio (%)": round(avg_prob, 1),
+
 
                 })
             df_resumen = pd.DataFrame(resumen_rows).sort_values("asesor")
             st.dataframe(df_resumen, width="stretch")
+
+            st.markdown("### 📌 Vista por asesor (estatus + ingreso esperado)")
+
+            if df_month.empty:
+                st.info("Sin datos para el periodo seleccionado.")
+            else:
+                umbral = 51.0
+
+                for ases, chunk in df_month.groupby("asesor"):
+                    ases_name = ases if ases not in (None, pd.NA) else "—"
+
+                    # Ingreso esperado: suma monto_estimado donde prob_cierre > 51
+                    tmp = chunk.copy()
+                    tmp["prob_cierre"] = pd.to_numeric(tmp["prob_cierre"], errors="coerce")
+                    tmp["monto_estimado"] = pd.to_numeric(tmp["monto_estimado"], errors="coerce")
+                    esperado = float(tmp.loc[tmp["prob_cierre"] > umbral, "monto_estimado"].fillna(0).sum())
+
+                    # Pie de estatus
+                    vc = tmp["estatus"].fillna("—").value_counts()
+                    labels = vc.index.tolist()
+                    values = vc.values.tolist()
+
+                    fig_pie = go.Figure(data=[go.Pie(labels=labels, values=values, hole=0.35)])
+                    fig_pie.update_layout(template="plotly_white", height=320, margin=dict(l=10,r=10,t=30,b=10))
+
+                    c1, c2 = st.columns([1, 2])
+                    with c1:
+                        st.subheader(f"Asesor: {ases_name}")
+                        st.metric(f"Ingreso esperado (prob > {int(umbral)}%)", f"${esperado:,.2f}")
+                    with c2:
+                        st.plotly_chart(fig_pie, use_container_width=True)
+
+                    st.divider()
+
 
         red_max, yellow_max = get_thresholds()
         st.caption(f"Semáforo: 🔴 ≤ {int(red_max*100)}%  |  🟡 ≤ {int(yellow_max*100)}%  |  🟢 > {int(yellow_max*100)}%")
@@ -1188,8 +1273,12 @@ with TAB_CONG:
         else:
             # Vista limpia: ocultamos ID internos
             df_obs_admin_ed = df_obs_admin.copy()
+
+            # Agregamos columna de eliminar (solo UI)
+            df_obs_admin_ed["Eliminar"] = False
+
             df_obs_admin_ed = df_obs_admin_ed[[
-                "created_at","asesor_alias","cliente","mensaje","done"
+                "id", "created_at","asesor_alias","cliente","mensaje","done","Eliminar"
             ]].sort_values("created_at", ascending=False)
 
             st.caption("Marca/Desmarca la columna **Hecha** y guarda los cambios.")
@@ -1202,69 +1291,68 @@ with TAB_CONG:
                     "done": "Hecha",
                 }),
                 key="editor_obs_admin",
-                width="stretch",
+                use_container_width=True,
                 hide_index=True,
                 column_config={
+                    "id": st.column_config.TextColumn("id", disabled=True),
                     "Creada": st.column_config.DatetimeColumn("Creada", disabled=True),
                     "Asesor": st.column_config.TextColumn("Asesor", disabled=True),
                     "Cliente": st.column_config.TextColumn("Cliente", disabled=True),
                     "Observación": st.column_config.TextColumn("Observación", disabled=True),
                     "Hecha": st.column_config.CheckboxColumn("Hecha"),
+                    "Eliminar": st.column_config.CheckboxColumn("Eliminar"),
                 }
             )
+
 
             # Para detectar cambios, reconstruimos el id usando merge con df original por columnas visibles
             if st.button("Guardar cambios de observaciones", type="primary"):
                 try:
-                    base = df_obs_admin[["id","created_at","asesor_alias","cliente","mensaje","done"]].copy()
-                    base = base.rename(columns={
-                        "created_at": "Creada",
-                        "asesor_alias": "Asesor",
-                        "cliente": "Cliente",
-                        "mensaje": "Observación",
-                        "done": "Hecha",
-                    })
+                    # edited_obs ya trae id, Hecha, Eliminar
+                    df_e = edited_obs.copy()
+                    # Normaliza nombres (porque renombraste columnas)
+                    # Si id no se renombró, queda como "id"
+                    # Hecha queda como "Hecha", Eliminar como "Eliminar"
 
-                    merged = base.merge(
-                        edited_obs,
-                        on=["Creada","Asesor","Cliente","Observación"],
-                        suffixes=("_old","_new"),
-                        how="left"
-                    )
+                    # 1) Borrados
+                    to_delete = df_e.loc[df_e["Eliminar"] == True, "id"].astype(str).tolist()
+                    if to_delete:
+                        for oid in to_delete:
+                            def _del():
+                                return supabase.table("observaciones").delete().eq("id", oid).execute()
+                            _retry_on_jwt_expired(_del)
 
+                    # 2) Cambios de Hecha
+                    # Cargamos base original para comparar
+                    base = df_obs_admin[["id","done"]].copy()
+                    base["id"] = base["id"].astype(str)
+
+                    merged = base.merge(df_e[["id","Hecha"]], on="id", how="left")
                     updates = []
                     for _, r in merged.iterrows():
-                        old = bool(r["Hecha_old"])
-                        new = bool(r["Hecha_new"])
-                        if new != old:
+                        old = bool(r["done"])
+                        new = bool(r["Hecha"])
+                        if new != old and str(r["id"]) not in set(to_delete):
                             updates.append((str(r["id"]), new))
 
-                    if not updates:
-                        st.info("No hay cambios por guardar.")
-                    else:
-                        for oid, new_done in updates:
-                            if new_done:
-                                payload = {
-                                    "done": True,
-                                    "done_at": datetime.utcnow().isoformat() + "Z",
-                                    "done_by_user_id": user.id
-                                }
-                            else:
-                                payload = {
-                                    "done": False,
-                                    "done_at": None,
-                                    "done_by_user_id": None
-                                }
-                            def _upd():
-                                return supabase.table("observaciones").update(payload).eq("id", oid).execute()
-                            _retry_on_jwt_expired(_upd)
-                        st.success(f"Actualizadas {len(updates)} observación(es).")
-                        st.session_state.obs_cache_buster += 1
-                        st.rerun()
+                    for oid, new_done in updates:
+                        if new_done:
+                            payload = {"done": True, "done_at": datetime.utcnow().isoformat() + "Z", "done_by_user_id": user.id}
+                        else:
+                            payload = {"done": False, "done_at": None, "done_by_user_id": None}
+                        def _upd():
+                            return supabase.table("observaciones").update(payload).eq("id", oid).execute()
+                        _retry_on_jwt_expired(_upd)
+
+                    st.success(f"Listo ✅ Eliminadas: {len(to_delete)} | Actualizadas: {len(updates)}")
+                    st.session_state.obs_cache_buster += 1
+                    st.rerun()
+
                 except APIError as e:
                     st.error(f"No se pudieron actualizar observaciones: {_format_api_error(e)}")
                 except Exception as e:
                     st.error(f"No se pudieron actualizar observaciones: {e}")
+
 
         # ---- Borrado masivo (solo admins) hola hoa hola
  
