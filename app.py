@@ -1219,28 +1219,27 @@ with TAB_CONG:
         tipo_param_det = None if tipo_sel == "Todos" else tipo_sel
 
         # ===== Registros por asesor (con opción TODO el histórico) =====
-        if ver_todo_admin:
-            df_det = load_capturas_filtered(
-                st.session_state.capturas_cache_buster,
-                uid=st.session_state.user.id,
-                is_admin_flag=ADMIN_FLAG,
-                scope="all",
-                date_from=None,
-                date_to_exclusive=None,
-                asesor=asesor_param,
-                tipo=tipo_param_det
-            )
-        else:
-            df_det = load_capturas_filtered(
-                st.session_state.capturas_cache_buster,
-                uid=st.session_state.user.id,
-                is_admin_flag=ADMIN_FLAG,
-                scope="all",
-                date_from=mes_cong,
-                date_to_exclusive=mes_cong_fin,
-                asesor=asesor_param,
-                tipo=tipo_param_det
-            )
+        # Fechas según periodo_admin (Mes / Trimestre / Acumulado)
+        if periodo_admin == "Acumulado":
+            det_from = None
+            det_to_exclusive = None
+        elif periodo_admin == "Trimestre":
+            det_from, det_to_exclusive = _quarter_bounds(mes_cong)
+        else:  # Mes
+            det_from = mes_cong
+            det_to_exclusive = mes_cong + relativedelta(months=1)
+
+        df_det = load_capturas_filtered(
+            st.session_state.capturas_cache_buster,
+            uid=st.session_state.user.id,
+            is_admin_flag=ADMIN_FLAG,
+            scope="all",
+            date_from=det_from,
+            date_to_exclusive=det_to_exclusive,
+            asesor=asesor_param,
+            tipo=tipo_param_det
+        )
+
 
         st.dataframe(
             style_rows_by_estatus(df_public_view(df_f)),
