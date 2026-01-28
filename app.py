@@ -424,6 +424,25 @@ def df_public_view(df: pd.DataFrame) -> pd.DataFrame:
     cols = [c for c in DISPLAY_COLS if c in df.columns]
     return df[cols].sort_values(["fecha", "cliente"], ascending=[False, True])
 
+#colores en las filas según estatus
+def style_rows_by_estatus(df: pd.DataFrame):
+    if df is None or df.empty or "estatus" not in df.columns:
+        return df
+
+    def _row_style(row):
+        est = row.get("estatus")
+        # Colores suaves (pastel)
+        color_map = {
+            "Acercamiento": "background-color: #E8F1FF;",
+            "Propuesta": "background-color: #FFF6E5;",
+            "Documentación": "background-color: #F0E9FF;",
+            "Cliente": "background-color: #E8FFEF;",
+            "Cancelado": "background-color: #FFE8E8;",
+        }
+        return [color_map.get(est, "")] * len(row)
+
+    return df.style.apply(_row_style, axis=1)
+
 # -----------------------------------------------------------------------------
 # UI (Header con logo)
 # -----------------------------------------------------------------------------
@@ -631,7 +650,8 @@ if not ADMIN_FLAG_GLOBAL:
         )
 
 
-        st.dataframe(df_public_view(df_f), use_container_width=True)
+        st.dataframe(style_rows_by_estatus(df_public_view(df_f)), use_container_width=True)
+
 
         
 
@@ -782,30 +802,25 @@ if not ADMIN_FLAG_GLOBAL:
             # ---------- Plotly: líneas bonitas
             fig = go.Figure()
 
-            fig.add_trace(go.Scatter(
+            fig.add_trace(go.Bar(
                 x=plot_df.index, y=plot_df["estimado"],
-                mode="lines+markers",
                 name="Estimado",
-                line=dict(width=3, shape="spline"),  # línea suave
-                marker=dict(size=6),
                 hovertemplate="<b>%{x|%d-%b}</b><br>Estimado: $%{y:,.2f}<extra></extra>"
             ))
 
-            fig.add_trace(go.Scatter(
+            fig.add_trace(go.Bar(
                 x=plot_df.index, y=plot_df["real"],
-                mode="lines+markers",
                 name="Real",
-                line=dict(width=3, shape="spline"),
-                marker=dict(size=6),
                 hovertemplate="<b>%{x|%d-%b}</b><br>Real: $%{y:,.2f}<extra></extra>"
             ))
-
+            
             # Estética general
             fig.update_layout(
                 template="plotly_white",
                 title="Ingresos estimados vs reales",
                 xaxis_title="Fecha",
                 yaxis_title="MXN",
+                barmode="group",
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
                 hovermode="x unified",
                 margin=dict(l=10, r=10, t=60, b=10),
