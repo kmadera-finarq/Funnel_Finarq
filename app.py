@@ -608,7 +608,7 @@ if not ADMIN_FLAG_GLOBAL:
 
         st.markdown("#### Historial")
 
-        ver_todo_asesor = st.checkbox("🔍 Ver todo mi histórico (sin filtro de fechas)", value=False)
+
 
         if periodo_sel == "Todo":
             date_from = None
@@ -752,15 +752,22 @@ if not ADMIN_FLAG_GLOBAL:
             daily["estimado"] = pd.to_numeric(daily["estimado"], errors="coerce").fillna(0.0)
             daily["real"]     = pd.to_numeric(daily["real"], errors="coerce").fillna(0.0)
 
-            # Rango completo de fechas para continuidad de líneas
-            if ver_todo_asesor:
-                # usar fechas reales del histórico completo
-                fecha_min = dfg["fecha"].min()
-                fecha_max = dfg["fecha"].max()
-                full_idx = pd.date_range(start=fecha_min, end=fecha_max, freq="D")
+            
+            # Índice completo de fechas según el periodo seleccionado
+            if date_from is not None and date_to_exclusive is not None:
+                full_idx = pd.date_range(
+                    start=date_from,
+                    end=date_to_exclusive - timedelta(days=1),
+                    freq="D"
+                )
             else:
-                # rango del mes seleccionado
-                full_idx = pd.date_range(start=mes_inicio, end=mes_fin_excl - timedelta(days=1), freq="D")
+                # Acumulado: usar rango real de datos
+                full_idx = pd.date_range(
+                    start=dfg["fecha"].min(),
+                    end=dfg["fecha"].max(),
+                    freq="D"
+                )
+
 
             daily = daily.reindex(full_idx, fill_value=0.0)
             
@@ -816,11 +823,11 @@ if not ADMIN_FLAG_GLOBAL:
                 x_end = dfg["fecha"].max().date() if not dfg.empty else mes_inicio
 
             fig.update_xaxes(
-                range=[x_start, x_end],
-                showgrid=False,
+                range=[full_idx.min(), full_idx.max()],
                 tickformat="%d-%b",
                 rangeslider=dict(visible=True)
             )
+
 
 
             
@@ -989,14 +996,7 @@ with TAB_CONG:
     if not ADMIN_FLAG:
         st.info("Solo administradores pueden ver el visor.")
     else:
-        st.subheader("Resumen por asesor")
         
-        periodo_admin = st.radio(
-            "Periodo (admin)",
-            ["Mes", "Trimestre", "Acumulado"],
-            horizontal=True,
-            key="periodo_admin"
-        )
 
         st.markdown("### 🎯 Asignar meta mensual")
 
@@ -1029,7 +1029,14 @@ with TAB_CONG:
                 st.error(f"No se pudo guardar: {e}")
 
         
+        st.subheader("Resumen por asesor")
         
+        periodo_admin = st.radio(
+            "Periodo (admin)",
+            ["Mes", "Trimestre", "Acumulado"],
+            horizontal=True,
+            key="periodo_admin"
+        )
 
         col1, col2 = st.columns([1,1])
         with col1:
@@ -1129,7 +1136,7 @@ with TAB_CONG:
                 st.info("Sin datos para el periodo seleccionado.")
             else:
                 umbral = 51.0
-                
+
                 df_month = df_month.copy()
                 df_month["asesor"] = df_month["asesor"].astype("string")
                 df_month["asesor"] = df_month["asesor"].fillna("—").replace("", "—")
