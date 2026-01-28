@@ -429,17 +429,30 @@ def style_rows_by_estatus(df: pd.DataFrame):
     if df is None or df.empty or "estatus" not in df.columns:
         return df
 
+    ESTATUS_COLORS = {
+    "Cliente":        "#636EFA",  # azul Plotly
+    "Documentación":  "#EF553B",  # rojo Plotly
+    "Acercamiento":   "#00CC96",  # verde Plotly
+    "Propuesta":      "#AB63FA",  # morado Plotly
+    "Cancelado":      "#FFA15A",  # naranja Plotly
+}
+
+def style_rows_by_estatus(df: pd.DataFrame):
+    if df is None or df.empty or "estatus" not in df.columns:
+        return df
+
     def _row_style(row):
         est = row.get("estatus")
-        # Colores suaves (pastel)
-        color_map = {
-            "Acercamiento": "background-color: #E8F1FF;",
-            "Propuesta": "background-color: #FFF6E5;",
-            "Documentación": "background-color: #F0E9FF;",
-            "Cliente": "background-color: #E8FFEF;",
-            "Cancelado": "background-color: #FFE8E8;",
-        }
-        return [color_map.get(est, "")] * len(row)
+        bg = ESTATUS_COLORS.get(est)
+
+        if bg:
+            # mismo color que la gráfica + transparencia + texto oscuro
+            return [f"background-color: {bg}20; color: #111111;"] * len(row)
+
+        return [""] * len(row)
+
+    return df.style.apply(_row_style, axis=1)
+
 
     return df.style.apply(_row_style, axis=1)
 
@@ -813,7 +826,7 @@ if not ADMIN_FLAG_GLOBAL:
                 name="Real",
                 hovertemplate="<b>%{x|%d-%b}</b><br>Real: $%{y:,.2f}<extra></extra>"
             ))
-            
+
             # Estética general
             fig.update_layout(
                 template="plotly_white",
@@ -1230,7 +1243,11 @@ with TAB_CONG:
                 tipo=tipo_param_det
             )
 
-        st.dataframe(df_public_view(df_det), width="stretch")
+        st.dataframe(
+            style_rows_by_estatus(df_public_view(df_f)),
+            use_container_width=True
+        )
+
 
 
         # ===================== 📝 Crear observación por ASESOR =====================
