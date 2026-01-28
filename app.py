@@ -424,12 +424,7 @@ def df_public_view(df: pd.DataFrame) -> pd.DataFrame:
     cols = [c for c in DISPLAY_COLS if c in df.columns]
     return df[cols].sort_values(["fecha", "cliente"], ascending=[False, True])
 
-#colores en las filas según estatus
-def style_rows_by_estatus(df: pd.DataFrame):
-    if df is None or df.empty or "estatus" not in df.columns:
-        return df
-
-    ESTATUS_COLORS = {
+ESTATUS_COLORS = {
     "Cliente":        "#636EFA",  # azul Plotly
     "Documentación":  "#EF553B",  # rojo Plotly
     "Acercamiento":   "#00CC96",  # verde Plotly
@@ -437,9 +432,13 @@ def style_rows_by_estatus(df: pd.DataFrame):
     "Cancelado":      "#FFA15A",  # naranja Plotly
 }
 
+
+#colores en las filas según estatus
 def style_rows_by_estatus(df: pd.DataFrame):
     if df is None or df.empty or "estatus" not in df.columns:
         return df
+
+
 
     def _row_style(row):
         est = row.get("estatus")
