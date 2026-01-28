@@ -679,9 +679,9 @@ if not ADMIN_FLAG_GLOBAL:
 
         meta_total = _get_meta_asesor_sum(st.session_state.user.id, date_from, date_to_exclusive)
 
-        cA, cB = st.columns(2)
-        cA.metric("Meta del periodo (MXN)", f"${meta_total:,.2f}")
-        cB.metric(f"Ingreso esperado total (prob > 51%)", f"${ingreso_esperado_total:,.2f}")
+
+        st.metric("Meta del periodo (MXN)", f"${meta_total:,.2f}")
+        
 
         st.metric("Brecha (Meta - Esperado)", f"${(meta_total - ingreso_esperado_total):,.2f}")
 
