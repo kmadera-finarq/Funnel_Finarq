@@ -1242,7 +1242,7 @@ with TAB_CONG:
 
 
         st.dataframe(
-            style_rows_by_estatus(df_public_view(df_f)),
+            style_rows_by_estatus(df_public_view(df_det)),
             use_container_width=True
         )
 
