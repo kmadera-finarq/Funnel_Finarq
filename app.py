@@ -30,6 +30,16 @@ def get_supabase() -> Client:
 
 supabase: Client = get_supabase()
 
+@st.cache_resource
+def get_supabase_admin() -> Client:
+    return create_client(
+        st.secrets["SUPABASE_URL"],
+        st.secrets["SUPABASE_SERVICE_ROLE_KEY"]
+    )
+
+supabase_admin: Client = get_supabase_admin()
+
+
 # -----------------------------------------------------------------------------
 # Auth state + cache buster + umbrales
 # -----------------------------------------------------------------------------
@@ -1495,4 +1505,37 @@ with TAB_CFG:
             st.rerun()
 
         st.divider()
-        st.info("Configuración pendiente de especificación (catálogos, metas u otros).")
+        st.subheader("🔐 Resetear contraseña de usuario (Admin)")
+
+        # Obtener usuarios (correo + id)
+        try:
+            users_resp = supabase_admin.auth.admin.list_users()
+            users = users_resp.users
+        except Exception as e:
+            st.error(f"No se pudieron cargar los usuarios: {e}")
+            users = []
+
+        if users:
+            user_map = {u.email: u.id for u in users if u.email}
+            selected_email = st.selectbox("Selecciona usuario", sorted(user_map.keys()))
+            new_pwd = st.text_input("Nueva contraseña", type="password")
+            new_pwd2 = st.text_input("Confirmar nueva contraseña", type="password")
+
+            if st.button("Cambiar contraseña", type="primary"):
+                if not new_pwd or len(new_pwd) < 8:
+                    st.warning("La contraseña debe tener al menos 8 caracteres.")
+                elif new_pwd != new_pwd2:
+                    st.warning("Las contraseñas no coinciden.")
+                else:
+                    try:
+                        supabase_admin.auth.admin.update_user_by_id(
+                            user_map[selected_email],
+                            {"password": new_pwd}
+                        )
+                        st.success(f"Contraseña actualizada para {selected_email}")
+                    except Exception as e:
+                        st.error(f"No se pudo cambiar la contraseña: {e}")
+        else:
+            st.info("No hay usuarios disponibles.")
+    
+            
