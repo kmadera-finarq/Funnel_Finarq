@@ -467,16 +467,12 @@ with col2:
 # Decidir pestañas según rol
 ADMIN_FLAG_GLOBAL = is_admin(st.session_state.user.id)
 
-if ADMIN_FLAG_GLOBAL:
-    tabs = st.tabs(["📊 Visor", "⚙️ Config"])
-    TAB_CONG, TAB_CFG = tabs
-else:
-    tabs = st.tabs(["🧑‍💼 Mi tablero", "📊 Visor", "⚙️ Config"])
-    TAB_INDIV, TAB_CONG, TAB_CFG = tabs
+tabs = st.tabs(["🧑‍💼 Mi tablero", "📊 Visor", "⚙️ Config"])
+TAB_INDIV, TAB_CONG, TAB_CFG = tabs
 
-# -------------------- Mi tablero (solo asesores / no admin) --------------------
-if not ADMIN_FLAG_GLOBAL:
-    with TAB_INDIV:
+
+# -------------------- Mi tablero (solo asesores / no admin) -------------------
+with TAB_INDIV:
         st.subheader("Captura de registro")
 
         # ✅ Lista de productos (catalogada, con respaldo si está vacío)
@@ -1028,11 +1024,17 @@ with TAB_CONG:
         st.markdown("### 🎯 Asignar meta mensual")
 
         ases_map = _get_asesores_map()
-        asesores_select = sorted(list(ases_map.keys()))
+        asesores_select = ["(Yo)"] + sorted(list(ases_map.keys()))
 
         c1, c2, c3 = st.columns([1,1,1])
         with c1:
             asesor_meta = st.selectbox("Asesor", asesores_select, key="meta_asesor")
+            if asesor_meta == "(Yo)":
+                meta_user_id = user.id
+                meta_alias = ALIAS
+            else:
+                meta_user_id = ases_map[asesor_meta]
+                meta_alias = asesor_meta
         with c2:
             mes_meta = st.date_input("Mes (meta)", value=date.today().replace(day=1), key="meta_mes").replace(day=1)
         with c3:
@@ -1041,8 +1043,8 @@ with TAB_CONG:
         if st.button("Guardar meta", type="primary", key="btn_guardar_meta"):
             try:
                 payload = {
-                    "asesor_user_id": ases_map[asesor_meta],
-                    "asesor_alias": asesor_meta,
+                    "asesor_user_id": meta_user_id,
+                    "asesor_alias": meta_alias,
                     "periodo": mes_meta.isoformat(),
                     "meta_mxn": float(meta_mxn)
                 }
