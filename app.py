@@ -1509,8 +1509,7 @@ with TAB_CFG:
 
         # Obtener usuarios (correo + id)
         try:
-            users_resp = supabase_admin.auth.admin.list_users()
-            users = users_resp.users
+            users = supabase_admin.auth.admin.list_users()
         except Exception as e:
             st.error(f"No se pudieron cargar los usuarios: {e}")
             users = []
