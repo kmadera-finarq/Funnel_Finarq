@@ -240,9 +240,28 @@ if st.session_state.user is None:
         email = st.text_input("Correo", placeholder="tucorreo@empresa.com")
         pwd = st.text_input("Contraseña", type="password")
         ok = st.form_submit_button("Entrar", width="stretch")
+     
+     #CAMBIO DE CONTRASEÑA   
+    st.markdown("¿Olvidaste tu contraseña?")
+    if st.button("Recuperar contraseña"):
+        if not email:
+            st.warning("Escribe tu correo primero.")
+        else:
+            try:
+                supabase.auth.reset_password_for_email(
+                    email,
+                    options={
+                        "redirect_to": f"{st.secrets['APP_URL']}?page=update-password"
+                    }
+                )
+                st.success("Te enviamos un correo para cambiar tu contraseña.")
+            except Exception as e:
+                st.error(f"No se pudo enviar el correo: {e}")
+
     if ok:
         login(email, pwd)
     st.stop()
+
 
 user = st.session_state.user
 st.sidebar.write(f"Usuario: **{user.email}**")
