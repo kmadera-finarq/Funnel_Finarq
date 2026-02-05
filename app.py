@@ -165,6 +165,67 @@ def logout():
 # En cada rerun, asegurar token adjunto
 _attach_postgrest_token_if_any()
 
+def handle_password_recovery_page():
+    qp = st.query_params
+    if qp.get("page") != "update-password":
+        return False  # no estamos en la pantalla de reset
+
+    st.title("Cambiar contraseña")
+
+    # En PKCE, Supabase redirige con ?code=...
+    code = qp.get("code")
+
+    if code and not st.session_state.get("recovery_session_ready"):
+        try:
+            resp = supabase.auth.exchange_code_for_session({"auth_code": code})
+            st.session_state.session = resp.session
+            st.session_state.user = resp.user
+            _attach_postgrest_token_if_any()
+            st.session_state.recovery_session_ready = True
+        except Exception as e:
+            st.error(f"No se pudo validar el link: {e}")
+            st.stop()
+
+    # Si no hay code, el usuario abrió la URL directo
+    if not st.session_state.get("recovery_session_ready"):
+        st.info("Abre esta página desde el link de recuperación que te llegó al correo.")
+        st.stop()
+
+    new1 = st.text_input("Nueva contraseña", type="password")
+    new2 = st.text_input("Confirmar nueva contraseña", type="password")
+
+    if st.button("Actualizar contraseña", type="primary", width="stretch"):
+        if not new1 or len(new1) < 8:
+            st.warning("Usa mínimo 8 caracteres.")
+            st.stop()
+        if new1 != new2:
+            st.warning("Las contraseñas no coinciden.")
+            st.stop()
+
+        try:
+            supabase.auth.update_user({"password": new1})
+            st.success("Contraseña actualizada. Ya puedes iniciar sesión.")
+            # Limpia URL
+            st.query_params.clear()
+            # Cierra sesión para que entren con su password nuevo
+            try:
+                supabase.auth.sign_out()
+            except Exception:
+                pass
+            st.session_state.session = None
+            st.session_state.user = None
+            st.session_state.recovery_session_ready = False
+            st.rerun()
+        except Exception as e:
+            st.error(f"No se pudo actualizar: {e}")
+            st.stop()
+
+    st.stop()
+
+# Ejecutar handler antes del login gate
+handle_password_recovery_page()
+
+
 # -----------------------------------------------------------------------------
 # Login UI
 # -----------------------------------------------------------------------------
