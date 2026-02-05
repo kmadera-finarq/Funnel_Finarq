@@ -175,60 +175,6 @@ def logout():
 # En cada rerun, asegurar token adjunto
 _attach_postgrest_token_if_any()
 
-def handle_password_recovery_page():
-    qp = st.query_params
-    if qp.get("page") != "update-password":
-        return False
-
-    st.title("Cambiar contraseña")
-
-    # 🔑 Supabase ya crea la sesión desde el link
-    try:
-        sess = supabase.auth.get_session()
-        if not sess or not sess.session:
-            st.info("Abre esta página desde el link de recuperación que te llegó al correo.")
-            st.stop()
-
-        st.session_state.session = sess.session
-        st.session_state.user = sess.user
-        _attach_postgrest_token_if_any()
-
-    except Exception:
-        st.info("Abre esta página desde el link de recuperación que te llegó al correo.")
-        st.stop()
-
-    new1 = st.text_input("Nueva contraseña", type="password")
-    new2 = st.text_input("Confirmar nueva contraseña", type="password")
-
-    if st.button("Actualizar contraseña", type="primary", width="stretch"):
-        if not new1 or len(new1) < 8:
-            st.warning("Usa mínimo 8 caracteres.")
-            st.stop()
-        if new1 != new2:
-            st.warning("Las contraseñas no coinciden.")
-            st.stop()
-
-        try:
-            supabase.auth.update_user({"password": new1})
-            st.success("Contraseña actualizada. Ya puedes iniciar sesión.")
-
-            # Limpieza total
-            st.query_params.clear()
-            supabase.auth.sign_out()
-            st.session_state.session = None
-            st.session_state.user = None
-            st.rerun()
-
-        except Exception as e:
-            st.error(f"No se pudo actualizar la contraseña: {e}")
-            st.stop()
-
-    st.stop()
-
-
-# Ejecutar handler antes del login gate
-handle_password_recovery_page()
-
 
 # -----------------------------------------------------------------------------
 # Login UI
@@ -244,23 +190,6 @@ if st.session_state.user is None:
         email = st.text_input("Correo", placeholder="tucorreo@empresa.com")
         pwd = st.text_input("Contraseña", type="password")
         ok = st.form_submit_button("Entrar", width="stretch")
-     
-     #CAMBIO DE CONTRASEÑA   
-    st.markdown("¿Olvidaste tu contraseña?")
-    if st.button("Recuperar contraseña"):
-        if not email:
-            st.warning("Escribe tu correo primero.")
-        else:
-            try:
-                supabase.auth.reset_password_for_email(
-                    email,
-                    options={
-                        "redirect_to": f"{st.secrets['APP_URL']}?page=update-password"
-                    }
-                )
-                st.success("Te enviamos un correo para cambiar tu contraseña.")
-            except Exception as e:
-                st.error(f"No se pudo enviar el correo: {e}")
 
     if ok:
         login(email, pwd)
