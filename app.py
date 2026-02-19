@@ -486,6 +486,68 @@ TAB_INDIV, TAB_CONG, TAB_CFG = tabs
 
 # -------------------- Mi tablero (solo asesores / no admin) -------------------
 with TAB_INDIV:
+        
+        st.markdown("## 🎯 Oportunidades detectadas")
+
+        def _load_oportunidades():
+            _attach_postgrest_token_if_any()
+            def _call():
+                return supabase.table("oportunidades_admin") \
+                    .select("*") \
+                    .eq("asesor_user_id", user.id) \
+                    .eq("atendida", False) \
+                    .order("created_at", desc=True) \
+                    .execute()
+            res = _retry_on_jwt_expired(_call)
+            return res.data or []
+
+        oportunidades = _load_oportunidades()
+
+        if not oportunidades:
+            st.success("No tienes oportunidades pendientes ✅")
+        else:
+            for op in oportunidades:
+                prioridad = op.get("prioridad", "media")
+
+                if prioridad == "alta":
+                    box_color = "#ff4b4b"
+                elif prioridad == "media":
+                    box_color = "#ffa600"
+                else:
+                    box_color = "#4caf50"
+
+                st.markdown(
+                    f"""
+                    <div style="
+                        background-color:{box_color};
+                        padding:20px;
+                        border-radius:10px;
+                        margin-bottom:15px;
+                        color:white;
+                    ">
+                        <h4>🚀 {op['titulo']}</h4>
+                        <p>{op.get('descripcion','')}</p>
+                        <small>Prioridad: {prioridad.upper()}</small>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+
+                if st.button(f"Marcar como atendida", key=f"op_{op['id']}"):
+                    try:
+                        def _upd():
+                            return supabase.table("oportunidades_admin").update({
+                                "atendida": True,
+                                "atendida_at": datetime.utcnow().isoformat() + "Z"
+                            }).eq("id", op["id"]).execute()
+                        _retry_on_jwt_expired(_upd)
+                        st.success("Marcada como atendida")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"No se pudo actualizar: {e}")
+
+
+
         st.subheader("Captura de registro")
 
         # ✅ Lista de productos (catalogada, con respaldo si está vacío)
@@ -1071,7 +1133,40 @@ with TAB_CONG:
             except Exception as e:
                 st.error(f"No se pudo guardar: {e}")
 
-        
+###### oportunidades registro ######
+        st.markdown("### 🚀 Registrar oportunidad para asesor")
+
+        ases_map = _get_asesores_map()
+        asesores = sorted(list(ases_map.keys()))
+
+        if asesores:
+            asesor_sel = st.selectbox("Selecciona asesor", asesores, key="op_asesor")
+
+            titulo = st.text_input("Título de la oportunidad")
+            descripcion = st.text_area("Descripción")
+            prioridad = st.selectbox("Prioridad", ["alta", "media", "baja"])
+
+            if st.button("Crear oportunidad", type="primary"):
+                if not titulo.strip():
+                    st.warning("El título es obligatorio.")
+                else:
+                    payload = {
+                        "asesor_user_id": ases_map[asesor_sel],
+                        "asesor_alias": asesor_sel,
+                        "titulo": titulo.strip(),
+                        "descripcion": descripcion.strip() or None,
+                        "prioridad": prioridad,
+                        "creada_por": user.id
+                    }
+                    try:
+                        def _ins():
+                            return supabase.table("oportunidades_admin").insert(payload).execute()
+                        _retry_on_jwt_expired(_ins)
+                        st.success("Oportunidad creada correctamente 🚀")
+                    except Exception as e:
+                        st.error(f"No se pudo crear: {e}")
+#################
+
         st.subheader("Resumen por asesor")
         
         periodo_admin = st.radio(
