@@ -524,7 +524,7 @@ with TAB_INDIV:
                             letter-spacing:1px;
                             font-weight:700;
                         ">
-                            {op.get('producto','').upper()}
+                            {(op.get('producto') or '').upper()}
                         </h2>
 
                         <h4 style="
