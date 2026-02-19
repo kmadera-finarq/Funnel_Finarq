@@ -511,40 +511,35 @@ with TAB_INDIV:
                 st.markdown(
                     f"""
                     <div style="
-                        background-color:#d62828;
-                        padding:28px;
-                        border-radius:14px;
-                        margin-bottom:22px;
+                        background-color:#ff3b3b;
+                        padding:25px;
+                        border-radius:12px;
+                        margin-bottom:20px;
                         color:white;
-                        box-shadow:0 6px 18px rgba(0,0,0,0.25);
+                        box-shadow:0 4px 12px rgba(0,0,0,0.2);
                     ">
-                        <h2 style="
-                            margin-bottom:10px;
-                            font-size:26px;
-                            letter-spacing:1px;
-                            font-weight:700;
-                        ">
-                            {(op.get('producto') or '').upper()}
-                        </h2>
-
-                        <h4 style="
-                            margin-bottom:8px;
-                            font-weight:600;
-                        ">
-                            {op.get('titulo','')}
-                        </h4>
-
-                        <p style="
-                            font-size:16px;
-                            opacity:0.95;
-                            margin-bottom:0;
-                        ">
-                            {op.get('descripcion','')}
-                        </p>
+                        <h3 style="margin-bottom:10px;">🚨 OPORTUNIDAD DETECTADA</h3>
+                        <p style="font-size:14px; opacity:0.9;"><b>Producto:</b> {op.get('producto','')}</p>
+                        <h4 style="margin-bottom:5px;">{op['titulo']}</h4>
+                        <p style="font-size:16px;">{op.get('descripcion','')}</p>
                     </div>
                     """,
-                    unsafe_allow_html=True   # 👈 ESTA LÍNEA ES CLAVE
+                    unsafe_allow_html=True
                 )
+
+                if st.button("Marcar como atendida", key=f"op_{op['id']}"):
+                    try:
+                        def _upd():
+                            return supabase.table("oportunidades_admin").update({
+                                "atendida": True,
+                                "atendida_at": datetime.utcnow().isoformat() + "Z"
+                            }).eq("id", op["id"]).execute()
+                        _retry_on_jwt_expired(_upd)
+                        st.success("Marcada como atendida")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"No se pudo actualizar: {e}")
+
 
 
 
