@@ -546,6 +546,7 @@ with TAB_INDIV:
                 st.warning("Completa los campos obligatorios *.")
             else:
                 payload = {
+                    "user_id": st.session_state.user.id,
                     "asesor": ALIAS,
                     "fecha": fecha.isoformat(),
                     "cliente": cliente,
