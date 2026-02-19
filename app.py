@@ -543,22 +543,8 @@ with TAB_INDIV:
                         </p>
                     </div>
                     """,
-                    unsafe_allow_html=True
+                    unsafe_allow_html=True   # 👈 ESTA LÍNEA ES CLAVE
                 )
-
-                if st.button("Marcar como atendida", key=f"op_{op['id']}"):
-                    try:
-                        def _upd():
-                            return supabase.table("oportunidades_admin").update({
-                                "atendida": True,
-                                "atendida_at": datetime.utcnow().isoformat() + "Z"
-                            }).eq("id", op["id"]).execute()
-                        _retry_on_jwt_expired(_upd)
-                        st.success("Marcada como atendida")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"No se pudo actualizar: {e}")
-
 
 
 
