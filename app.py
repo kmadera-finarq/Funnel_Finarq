@@ -511,17 +511,36 @@ with TAB_INDIV:
                 st.markdown(
                     f"""
                     <div style="
-                        background-color:#ff3b3b;
-                        padding:25px;
-                        border-radius:12px;
-                        margin-bottom:20px;
+                        background-color:#d62828;
+                        padding:28px;
+                        border-radius:14px;
+                        margin-bottom:22px;
                         color:white;
-                        box-shadow:0 4px 12px rgba(0,0,0,0.2);
+                        box-shadow:0 6px 18px rgba(0,0,0,0.25);
                     ">
-                        <h3 style="margin-bottom:10px;"> 🚀 OPORTUNIDAD DETECTADA</h3>
-                        <p style="font-size:14px; opacity:0.9;"><b>Producto:</b> {op.get('producto','')}</p>
-                        <h4 style="margin-bottom:5px;">{op['titulo']}</h4>
-                        <p style="font-size:16px;">{op.get('descripcion','')}</p>
+                        <h2 style="
+                            margin-bottom:10px;
+                            font-size:26px;
+                            letter-spacing:1px;
+                            font-weight:700;
+                        ">
+                            {op.get('producto','').upper()}
+                        </h2>
+
+                        <h4 style="
+                            margin-bottom:8px;
+                            font-weight:600;
+                        ">
+                            {op.get('titulo','')}
+                        </h4>
+
+                        <p style="
+                            font-size:16px;
+                            opacity:0.95;
+                            margin-bottom:0;
+                        ">
+                            {op.get('descripcion','')}
+                        </p>
                     </div>
                     """,
                     unsafe_allow_html=True
