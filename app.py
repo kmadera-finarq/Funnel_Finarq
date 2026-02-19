@@ -518,7 +518,8 @@ with TAB_INDIV:
                         color:white;
                         box-shadow:0 4px 12px rgba(0,0,0,0.2);
                     ">
-                        <h3 style="margin-bottom:10px;">🚨 OPORTUNIDAD DETECTADA</h3>
+                        <h3 style="margin-bottom:10px;"> 🚀 OPORTUNIDAD DETECTADA</h3>
+                        <p style="font-size:14px; opacity:0.9;"><b>Producto:</b> {op.get('producto','')}</p>
                         <h4 style="margin-bottom:5px;">{op['titulo']}</h4>
                         <p style="font-size:16px;">{op.get('descripcion','')}</p>
                     </div>
@@ -538,6 +539,7 @@ with TAB_INDIV:
                         st.rerun()
                     except Exception as e:
                         st.error(f"No se pudo actualizar: {e}")
+
 
 
 
@@ -1135,9 +1137,13 @@ with TAB_CONG:
         if asesores:
             asesor_sel = st.selectbox("Selecciona asesor", asesores, key="op_asesor")
 
+            producto = st.selectbox(
+                "Producto relacionado",
+                ["Divisas","Inversiones","Factoraje","Arrendamiento","TPV","Crédito TPV","Créditos"]
+            )
+
             titulo = st.text_input("Título de la oportunidad")
             descripcion = st.text_area("Descripción")
-            prioridad = st.selectbox("Prioridad", ["alta", "media", "baja"])
 
             if st.button("Crear oportunidad", type="primary"):
                 if not titulo.strip():
@@ -1146,9 +1152,9 @@ with TAB_CONG:
                     payload = {
                         "asesor_user_id": ases_map[asesor_sel],
                         "asesor_alias": asesor_sel,
+                        "producto": producto,
                         "titulo": titulo.strip(),
                         "descripcion": descripcion.strip() or None,
-                        "prioridad": prioridad,
                         "creada_por": user.id
                     }
                     try:
@@ -1158,6 +1164,7 @@ with TAB_CONG:
                         st.success("Oportunidad creada correctamente 🚀")
                     except Exception as e:
                         st.error(f"No se pudo crear: {e}")
+
 #################
 
         st.subheader("Resumen por asesor")
