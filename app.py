@@ -507,33 +507,26 @@ with TAB_INDIV:
             st.success("No tienes oportunidades pendientes ✅")
         else:
             for op in oportunidades:
-                prioridad = op.get("prioridad", "media")
-
-                if prioridad == "alta":
-                    box_color = "#ff4b4b"
-                elif prioridad == "media":
-                    box_color = "#ffa600"
-                else:
-                    box_color = "#4caf50"
 
                 st.markdown(
                     f"""
                     <div style="
-                        background-color:{box_color};
-                        padding:20px;
-                        border-radius:10px;
-                        margin-bottom:15px;
+                        background-color:#ff3b3b;
+                        padding:25px;
+                        border-radius:12px;
+                        margin-bottom:20px;
                         color:white;
+                        box-shadow:0 4px 12px rgba(0,0,0,0.2);
                     ">
-                        <h4>🚀 {op['titulo']}</h4>
-                        <p>{op.get('descripcion','')}</p>
-                        <small>Prioridad: {prioridad.upper()}</small>
+                        <h3 style="margin-bottom:10px;">🚨 OPORTUNIDAD DETECTADA</h3>
+                        <h4 style="margin-bottom:5px;">{op['titulo']}</h4>
+                        <p style="font-size:16px;">{op.get('descripcion','')}</p>
                     </div>
                     """,
                     unsafe_allow_html=True
                 )
 
-                if st.button(f"Marcar como atendida", key=f"op_{op['id']}"):
+                if st.button("Marcar como atendida", key=f"op_{op['id']}"):
                     try:
                         def _upd():
                             return supabase.table("oportunidades_admin").update({
