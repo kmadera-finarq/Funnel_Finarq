@@ -166,10 +166,12 @@ def login(email: str, password: str):
 def logout():
     try:
         supabase.auth.sign_out()
-    except Exception:
+    except:
         pass
-    st.session_state.session = None
-    st.session_state.user = None
+
+    for key in list(st.session_state.keys()):
+        del st.session_state[key]
+
     st.rerun()
 
 # En cada rerun, asegurar token adjunto
@@ -617,9 +619,13 @@ with TAB_INDIV:
                 }
                 # (Opcional) si quieres obligar 'monto_real' al crear en 'Cliente', añade inputs y validación aquí.
                 try:
+                    _attach_postgrest_token_if_any()
+
                     def _call():
                         return supabase.table("capturas").insert(payload).execute()
+                    
                     _retry_on_jwt_expired(_call)
+                    
                     st.success("¡Registro guardado!")
                     st.session_state.capturas_cache_buster += 1
                 except APIError as e:
@@ -1074,7 +1080,7 @@ with TAB_INDIV:
                     else:
                         for rid_str, upd in changes:
                             def _call_upd():
-                                return supabase.table("capturas").update(upd).eq("id", rid_str).execute()
+                                return supabase.table("capturas").update(upd).eq("id", rid_str).eq("user_id", user.id).execute()
                             _retry_on_jwt_expired(_call_upd)
                         st.success(f"Actualizados {len(changes)} registro(s).")
                         st.session_state.capturas_cache_buster += 1
