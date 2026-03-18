@@ -489,9 +489,9 @@ TAB_INDIV, TAB_CONG, TAB_CFG = tabs
 # -------------------- Mi tablero (solo asesores / no admin) -------------------
 with TAB_INDIV:
         
+        st.markdown("## 🎯 Oportunidades Detectadas")
+        
         with st.container():
-
-            st.markdown("## 🎯 Oportunidades Detectadas")
 
             def _load_oportunidades():
                 try:
