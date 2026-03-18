@@ -490,9 +490,7 @@ TAB_INDIV, TAB_CONG, TAB_CFG = tabs
 with TAB_INDIV:
         
         st.markdown("## 🎯 Oportunidades detectadas")
-            
-        user_role = "admin" if ADMIN_FLAG_GLOBAL else "asesor"
-
+        
         def _load_oportunidades():
             _attach_postgrest_token_if_any()
 
@@ -508,11 +506,19 @@ with TAB_INDIV:
                             .execute()
 
             res = _retry_on_jwt_expired(_call)
-            return res.data or []
+
+            # 🔴 PROTECCIÓN: evitar que se imprima algo raro
+            data = res.data if hasattr(res, "data") else []
+            return data or []
+
 
         oportunidades = _load_oportunidades()
 
-        if not oportunidades:
+        # 🔴 PROTECCIÓN EXTRA (muy importante)
+        if not isinstance(oportunidades, list):
+            oportunidades = []
+
+        if len(oportunidades) == 0:
             st.success("No tienes oportunidades pendientes ✅")
         else:
             cols = st.columns(3)
@@ -521,6 +527,10 @@ with TAB_INDIV:
                 col = cols[i % 3]
 
                 with col:
+                    producto = str(op.get('producto', ''))
+                    aliado = str(op.get('aliado', ''))
+                    descripcion = str(op.get('descripcion', ''))
+
                     st.markdown(
                         f"""
                         <div style="
@@ -534,17 +544,17 @@ with TAB_INDIV:
 
                             <div style="font-size:13px; color:#6B7280;">Producto</div>
                             <div style="font-weight:600; margin-bottom:10px;">
-                                {op.get('producto','')}
+                                {producto}
                             </div>
 
                             <div style="font-size:13px; color:#6B7280;">Aliado</div>
                             <div style="margin-bottom:10px;">
-                                {op.get('aliado','')}
+                                {aliado}
                             </div>
 
                             <div style="font-size:13px; color:#6B7280;">Descripción</div>
                             <div style="font-size:14px;">
-                                {op.get('descripcion','')}
+                                {descripcion}
                             </div>
 
                         </div>
@@ -552,8 +562,7 @@ with TAB_INDIV:
                         unsafe_allow_html=True
                     )
 
-                    # Checkbox debajo del card
-                    completado = st.checkbox("✔ Atendida", key=f"op_{op['id']}")
+                    completado = st.checkbox("✔ Atendida", key=f"op_{op.get('id', i)}")
 
                     if completado:
                         try:
@@ -561,7 +570,7 @@ with TAB_INDIV:
                                 return supabase.table("oportunidades_admin").update({
                                     "atendida": True,
                                     "atendida_at": datetime.utcnow().isoformat() + "Z"
-                                }).eq("id", op["id"]).execute()
+                                }).eq("id", op.get("id")).execute()
 
                             _retry_on_jwt_expired(_upd)
                             st.success("Marcada como atendida")
@@ -569,8 +578,6 @@ with TAB_INDIV:
 
                         except Exception as e:
                             st.error(f"No se pudo actualizar: {e}")
-
-
 
 
         st.subheader("Captura de registro")
