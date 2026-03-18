@@ -490,7 +490,8 @@ TAB_INDIV, TAB_CONG, TAB_CFG = tabs
 with TAB_INDIV:
         
         st.markdown("## 🎯 Oportunidades detectadas")
-
+        s
+        t.write(user)      
         user_role = st.session_state.get("role", "asesor")
 
         def _load_oportunidades():
