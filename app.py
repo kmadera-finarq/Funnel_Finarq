@@ -491,15 +491,22 @@ with TAB_INDIV:
         
         st.markdown("## 🎯 Oportunidades detectadas")
 
+        user_role = st.session_state.get("role", "asesor")
+
         def _load_oportunidades():
             _attach_postgrest_token_if_any()
+
             def _call():
-                return supabase.table("oportunidades_admin") \
-                    .select("*") \
-                    .eq("asesor_user_id", user.id) \
-                    .eq("atendida", False) \
-                    .order("created_at", desc=True) \
-                    .execute()
+                query = supabase.table("oportunidades_admin").select("*")
+
+                # 🔴 CLAVE: solo filtra si NO es admin
+                if user_role != "admin":
+                    query = query.eq("asesor_user_id", user.id)
+
+                return query.eq("atendida", False) \
+                            .order("created_at", desc=True) \
+                            .execute()
+
             res = _retry_on_jwt_expired(_call)
             return res.data or []
 
