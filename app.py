@@ -499,7 +499,7 @@ with TAB_INDIV:
             def _call():
                 query = supabase.table("oportunidades_admin").select("*")
 
-                
+                # Solo filtra si NO es admin
                 if not ADMIN_FLAG_GLOBAL:
                     query = query.eq("asesor_user_id", user.id)
 
@@ -515,76 +515,60 @@ with TAB_INDIV:
         if not oportunidades:
             st.success("No tienes oportunidades pendientes ✅")
         else:
-            for op in oportunidades:
+            cols = st.columns(3)
 
-                st.markdown(
-                    f"""
-                    <div style="
-                        background:white;
-                        padding:22px;
-                        border-radius:12px;
-                        margin-bottom:18px;
-                        border-left:6px solid #ff3b3b;
-                        box-shadow:0 4px 12px rgba(0,0,0,0.08);
-                    ">
+            for i, op in enumerate(oportunidades):
+                col = cols[i % 3]
 
+                with col:
+                    st.markdown(
+                        f"""
                         <div style="
-                            font-weight:700;
-                            color:#ff3b3b;
-                            font-size:18px;
-                            margin-bottom:18px;
-                        ">
-                        🚨 Oportunidad detectada
-                        </div>
-
-                        <div style="
-                            display:grid;
-                            grid-template-columns:1fr 1fr;
-                            gap:12px;
-                            font-size:15px;
+                            background-color:#EEF4FF;
+                            padding:18px;
+                            border-radius:12px;
+                            margin-bottom:15px;
+                            box-shadow:0 2px 8px rgba(0,0,0,0.05);
+                            height: 180px;
                         ">
 
-                            <div>
-                                <span style="color:#777;">Producto</span><br>
-                                <b>{op.get('producto','')}</b>
+                            <div style="font-size:13px; color:#6B7280;">Producto</div>
+                            <div style="font-weight:600; margin-bottom:10px;">
+                                {op.get('producto','')}
                             </div>
 
-                            <div>
-                                <span style="color:#777;">Aliado</span><br>
-                                <b>{op.get('aliado','')}</b>
+                            <div style="font-size:13px; color:#6B7280;">Aliado</div>
+                            <div style="margin-bottom:10px;">
+                                {op.get('aliado','')}
                             </div>
 
-                            <div>
-                                <span style="color:#777;">Destino</span><br>
-                                <b>{op.get('destino','')}</b>
-                            </div>
-
-                            <div>
-                                <span style="color:#777;">Monto máximo</span><br>
-                                <b>{op.get('monto_max','')}</b>
+                            <div style="font-size:13px; color:#6B7280;">Descripción</div>
+                            <div style="font-size:14px;">
+                                {op.get('descripcion','')}
                             </div>
 
                         </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
 
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
+                    # Checkbox debajo del card
+                    completado = st.checkbox("✔ Atendida", key=f"op_{op['id']}")
 
-                completado = st.checkbox("✔ Marcar como atendida", key=f"op_{op['id']}")
+                    if completado:
+                        try:
+                            def _upd():
+                                return supabase.table("oportunidades_admin").update({
+                                    "atendida": True,
+                                    "atendida_at": datetime.utcnow().isoformat() + "Z"
+                                }).eq("id", op["id"]).execute()
 
-                if completado:
-                    try:
-                        def _upd():
-                            return supabase.table("oportunidades_admin").update({
-                                "atendida": True,
-                                "atendida_at": datetime.utcnow().isoformat() + "Z"
-                            }).eq("id", op["id"]).execute()
-                        _retry_on_jwt_expired(_upd)
-                        st.success("Marcada como atendida")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"No se pudo actualizar: {e}")
+                            _retry_on_jwt_expired(_upd)
+                            st.success("Marcada como atendida")
+                            st.rerun()
+
+                        except Exception as e:
+                            st.error(f"No se pudo actualizar: {e}")
 
 
 
