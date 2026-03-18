@@ -489,95 +489,109 @@ TAB_INDIV, TAB_CONG, TAB_CFG = tabs
 # -------------------- Mi tablero (solo asesores / no admin) -------------------
 with TAB_INDIV:
         
-        st.markdown("## 🎯 Oportunidades detectadas")
-        
-        def _load_oportunidades():
-            _attach_postgrest_token_if_any()
+        with st.container():
 
-            def _call():
-                query = supabase.table("oportunidades_admin").select("*")
+            st.markdown("## 🎯 Oportunidades Detectadas")
 
-                # Solo filtra si NO es admin
-                if not ADMIN_FLAG_GLOBAL:
-                    query = query.eq("asesor_user_id", user.id)
+            def _load_oportunidades():
+                try:
+                    _attach_postgrest_token_if_any()
 
-                return query.eq("atendida", False) \
-                            .order("created_at", desc=True) \
-                            .execute()
+                    def _call():
+                        query = supabase.table("oportunidades_admin").select("*")
 
-            res = _retry_on_jwt_expired(_call)
+                        # Solo filtra si NO es admin
+                        if not ADMIN_FLAG_GLOBAL:
+                            query = query.eq("asesor_user_id", user.id)
 
-            # 🔴 PROTECCIÓN: evitar que se imprima algo raro
-            data = res.data if hasattr(res, "data") else []
-            return data or []
+                        return query.eq("atendida", False) \
+                                    .order("created_at", desc=True) \
+                                    .execute()
+
+                    res = _retry_on_jwt_expired(_call)
+
+                    # 🔴 FORZAMOS estructura limpia
+                    if res is None:
+                        return []
+
+                    if hasattr(res, "data"):
+                        return list(res.data) if res.data else []
+
+                    return []
+
+                except Exception:
+                    return []
 
 
-        oportunidades = _load_oportunidades()
+            oportunidades = _load_oportunidades()
 
-        # 🔴 PROTECCIÓN EXTRA (muy importante)
-        if not isinstance(oportunidades, list):
-            oportunidades = []
+            # 🔴 BLINDAJE TOTAL
+            if not isinstance(oportunidades, list):
+                oportunidades = []
 
-        if len(oportunidades) == 0:
-            st.success("No tienes oportunidades pendientes ✅")
-        else:
-            cols = st.columns(3)
+            if len(oportunidades) == 0:
+                st.success("No tienes oportunidades pendientes ✅")
 
-            for i, op in enumerate(oportunidades):
-                col = cols[i % 3]
+            else:
+                cols = st.columns(3)
 
-                with col:
-                    producto = str(op.get('producto', ''))
-                    aliado = str(op.get('aliado', ''))
-                    descripcion = str(op.get('descripcion', ''))
+                for i, op in enumerate(oportunidades):
+                    col = cols[i % 3]
 
-                    st.markdown(
-                        f"""
-                        <div style="
-                            background-color:#EEF4FF;
-                            padding:18px;
-                            border-radius:12px;
-                            margin-bottom:15px;
-                            box-shadow:0 2px 8px rgba(0,0,0,0.05);
-                            height: 180px;
-                        ">
+                    with col:
+                        producto = str(op.get('producto', ''))
+                        aliado = str(op.get('aliado', ''))
+                        descripcion = str(op.get('descripcion', ''))
 
-                            <div style="font-size:13px; color:#6B7280;">Producto</div>
-                            <div style="font-weight:600; margin-bottom:10px;">
-                                {producto}
+                        st.markdown(
+                            f"""
+                            <div style="
+                                background-color:#EEF4FF;
+                                padding:18px;
+                                border-radius:12px;
+                                margin-bottom:15px;
+                                box-shadow:0 2px 8px rgba(0,0,0,0.05);
+                                height: 180px;
+                            ">
+
+                                <div style="font-size:13px; color:#6B7280;">Producto</div>
+                                <div style="font-weight:600; margin-bottom:10px;">
+                                    {producto}
+                                </div>
+
+                                <div style="font-size:13px; color:#6B7280;">Aliado</div>
+                                <div style="margin-bottom:10px;">
+                                    {aliado}
+                                </div>
+
+                                <div style="font-size:13px; color:#6B7280;">Descripción</div>
+                                <div style="font-size:14px;">
+                                    {descripcion}
+                                </div>
+
                             </div>
+                            """,
+                            unsafe_allow_html=True
+                        )
 
-                            <div style="font-size:13px; color:#6B7280;">Aliado</div>
-                            <div style="margin-bottom:10px;">
-                                {aliado}
-                            </div>
+                        completado = st.checkbox("✔ Atendida", key=f"op_{op.get('id', i)}")
 
-                            <div style="font-size:13px; color:#6B7280;">Descripción</div>
-                            <div style="font-size:14px;">
-                                {descripcion}
-                            </div>
+                        if completado:
+                            try:
+                                def _upd():
+                                    return supabase.table("oportunidades_admin").update({
+                                        "atendida": True,
+                                        "atendida_at": datetime.utcnow().isoformat() + "Z"
+                                    }).eq("id", op.get("id")).execute()
 
-                        </div>
-                        """,
-                        unsafe_allow_html=True
-                    )
+                                _retry_on_jwt_expired(_upd)
+                                st.success("Marcada como atendida")
+                                st.rerun()
 
-                    completado = st.checkbox("✔ Atendida", key=f"op_{op.get('id', i)}")
+                            except Exception as e:
+                                st.error(f"No se pudo actualizar: {e}")
+                
 
-                    if completado:
-                        try:
-                            def _upd():
-                                return supabase.table("oportunidades_admin").update({
-                                    "atendida": True,
-                                    "atendida_at": datetime.utcnow().isoformat() + "Z"
-                                }).eq("id", op.get("id")).execute()
-
-                            _retry_on_jwt_expired(_upd)
-                            st.success("Marcada como atendida")
-                            st.rerun()
-
-                        except Exception as e:
-                            st.error(f"No se pudo actualizar: {e}")
 
 
         st.subheader("Captura de registro")
