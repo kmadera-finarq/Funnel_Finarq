@@ -513,23 +513,60 @@ with TAB_INDIV:
                 st.markdown(
                     f"""
                     <div style="
-                        background-color:#ff3b3b;
-                        padding:25px;
+                        background:white;
+                        padding:22px;
                         border-radius:12px;
-                        margin-bottom:20px;
-                        color:white;
-                        box-shadow:0 4px 12px rgba(0,0,0,0.2);
+                        margin-bottom:18px;
+                        border-left:6px solid #ff3b3b;
+                        box-shadow:0 4px 12px rgba(0,0,0,0.08);
                     ">
-                        <h3 style="margin-bottom:10px;">🚨 OPORTUNIDAD DETECTADA</h3>
-                        <p style="font-size:14px; opacity:0.9;"><b>Producto:</b> {op.get('producto','')}</p>
-                        <h4 style="margin-bottom:5px;">{op['titulo']}</h4>
-                        <p style="font-size:16px;">{op.get('descripcion','')}</p>
+
+                        <div style="
+                            font-weight:700;
+                            color:#ff3b3b;
+                            font-size:18px;
+                            margin-bottom:18px;
+                        ">
+                        🚨 Oportunidad detectada
+                        </div>
+
+                        <div style="
+                            display:grid;
+                            grid-template-columns:1fr 1fr;
+                            gap:12px;
+                            font-size:15px;
+                        ">
+
+                            <div>
+                                <span style="color:#777;">Producto</span><br>
+                                <b>{op.get('producto','')}</b>
+                            </div>
+
+                            <div>
+                                <span style="color:#777;">Aliado</span><br>
+                                <b>{op.get('aliado','')}</b>
+                            </div>
+
+                            <div>
+                                <span style="color:#777;">Destino</span><br>
+                                <b>{op.get('destino','')}</b>
+                            </div>
+
+                            <div>
+                                <span style="color:#777;">Monto máximo</span><br>
+                                <b>{op.get('monto_max','')}</b>
+                            </div>
+
+                        </div>
+
                     </div>
                     """,
                     unsafe_allow_html=True
                 )
 
-                if st.button("Marcar como atendida", key=f"op_{op['id']}"):
+                completado = st.checkbox("✔ Marcar como atendida", key=f"op_{op['id']}")
+
+                if completado:
                     try:
                         def _upd():
                             return supabase.table("oportunidades_admin").update({
