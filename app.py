@@ -490,9 +490,8 @@ TAB_INDIV, TAB_CONG, TAB_CFG = tabs
 with TAB_INDIV:
         
         st.markdown("## 🎯 Oportunidades detectadas")
-        s
-        t.write(user)      
-        user_role = st.session_state.get("role", "asesor")
+        st.write(user)      
+        user_role = "admin" if ADMIN_FLAG_GLOBAL else "asesor"
 
         def _load_oportunidades():
             _attach_postgrest_token_if_any()
@@ -500,8 +499,8 @@ with TAB_INDIV:
             def _call():
                 query = supabase.table("oportunidades_admin").select("*")
 
-                # 🔴 CLAVE: solo filtra si NO es admin
-                if user_role != "admin":
+                
+                if not ADMIN_FLAG_GLOBAL:
                     query = query.eq("asesor_user_id", user.id)
 
                 return query.eq("atendida", False) \
