@@ -490,7 +490,7 @@ TAB_INDIV, TAB_CONG, TAB_CFG = tabs
 with TAB_INDIV:
         
         st.markdown("## 🎯 Oportunidades detectadas")
-        st.write(user)      
+            
         user_role = "admin" if ADMIN_FLAG_GLOBAL else "asesor"
 
         def _load_oportunidades():
