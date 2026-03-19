@@ -1210,19 +1210,22 @@ with TAB_CONG:
                         st.success("Oportunidad creada correctamente 🚀")
                     except Exception as e:
                         st.error(f"No se pudo crear: {e}")
+
+       ### historial de oportunidades####
         if ADMIN_FLAG_GLOBAL:
 
-            st.markdown("## 🕘 Historial de oportunidades")
+            import pandas as pd
 
-            def _load_historial():
+            st.markdown("## 📊 Gestión de oportunidades")
+
+            def _load_all():
                 try:
                     _attach_postgrest_token_if_any()
 
                     def _call():
                         return supabase.table("oportunidades_admin") \
                             .select("*") \
-                            .eq("atendida", True) \
-                            .order("atendida_at", desc=True) \
+                            .order("created_at", desc=True) \
                             .execute()
 
                     res = _retry_on_jwt_expired(_call)
@@ -1235,33 +1238,98 @@ with TAB_CONG:
                 except:
                     return []
 
-            historial = _load_historial()
+            data = _load_all()
 
-            if not historial:
-                st.info("No hay historial aún")
-
+            if not data:
+                st.info("No hay registros")
             else:
-                import pandas as pd
+                df = pd.DataFrame(data)
 
-                df = pd.DataFrame(historial)
+                # 🔴 LIMPIEZA
+                df["producto"] = df["producto"].fillna("-")
+                df["aliado"] = df["aliado"].fillna("-")
+                df["descripcion"] = df["descripcion"].fillna("-")
 
-                # 🔥 SOLO MOSTRAR LO NECESARIO
-                columnas = ["producto", "aliado", "descripcion", "atendida_at"]
+                # 🔥 ESTADO
+                df["estado"] = df["atendida"].apply(lambda x: "Atendida" if x else "Activa")
 
-                df = df[columnas]
+                # 🔥 FILTROS
+                col1, col2 = st.columns(2)
 
-                # 🔥 RENOMBRAR PARA QUE SE VEA PRO
-                df = df.rename(columns={
+                with col1:
+                    filtro_producto = st.multiselect(
+                        "Filtrar por producto",
+                        options=sorted(df["producto"].unique())
+                    )
+
+                with col2:
+                    filtro_asesor = st.multiselect(
+                        "Filtrar por asesor",
+                        options=sorted(df["asesor_user_id"].dropna().unique())
+                    )
+
+                # 🔽 APLICAR FILTROS
+                df_filtrado = df.copy()
+
+                if filtro_producto:
+                    df_filtrado = df_filtrado[df_filtrado["producto"].isin(filtro_producto)]
+
+                if filtro_asesor:
+                    df_filtrado = df_filtrado[df_filtrado["asesor_user_id"].isin(filtro_asesor)]
+
+                # 🔥 COLUMNAS FINALES
+                df_final = df_filtrado[[
+                    "id",
+                    "producto",
+                    "aliado",
+                    "descripcion",
+                    "estado",
+                    "atendida_at"
+                ]].copy()
+
+                df_final = df_final.rename(columns={
                     "producto": "Producto",
                     "aliado": "Aliado",
                     "descripcion": "Descripción",
-                    "atendida_at": "Fecha atendida"
+                    "estado": "Estado",
+                    "atendida_at": "Fecha"
                 })
 
-                # 🔥 FORMATO DE FECHA
-                df["Fecha atendida"] = df["Fecha atendida"].astype(str).str[:10]
+                df_final["Fecha"] = df_final["Fecha"].astype(str).str[:10]
 
-                st.dataframe(df, use_container_width=True)
+                # 🔥 CHECKBOX DE BORRAR
+                df_final["Eliminar"] = False
+
+                edited_df = st.data_editor(
+                    df_final,
+                    use_container_width=True,
+                    num_rows="dynamic",
+                    column_config={
+                        "Eliminar": st.column_config.CheckboxColumn("Eliminar")
+                    },
+                    disabled=["Producto", "Aliado", "Descripción", "Estado", "Fecha"]
+                )
+
+                # 🔴 BORRAR SELECCIONADOS
+                eliminar_ids = edited_df[edited_df["Eliminar"] == True]["id"].tolist()
+
+                if eliminar_ids:
+                    if st.button("🗑️ Eliminar seleccionados"):
+                        try:
+                            for _id in eliminar_ids:
+                                def _del():
+                                    return supabase.table("oportunidades_admin") \
+                                        .delete() \
+                                        .eq("id", _id) \
+                                        .execute()
+
+                                _retry_on_jwt_expired(_del)
+
+                            st.success("Registros eliminados")
+                            st.rerun()
+
+                        except Exception as e:
+                            st.error(f"Error al eliminar: {e}")
 
 #################
 
