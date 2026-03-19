@@ -545,32 +545,25 @@ with TAB_INDIV:
 
                         st.markdown(
                             f"""
-                            <div style="
-                                background-color:#EEF4FF;
-                                padding:18px;
-                                border-radius:12px;
-                                margin-bottom:15px;
-                                box-shadow:0 2px 8px rgba(0,0,0,0.05);
-                                height: 180px;
-                            ">
+                        <div style="background-color:#EEF4FF;padding:18px;border-radius:12px;margin-bottom:15px;box-shadow:0 2px 8px rgba(0,0,0,0.05);height:180px;">
 
-                                <div style="font-size:13px; color:#6B7280;">Producto</div>
-                                <div style="font-weight:600; margin-bottom:10px;">
-                                    {producto}
-                                </div>
+                        <div style="font-size:13px;color:#6B7280;">Producto</div>
+                        <div style="font-weight:600;margin-bottom:10px;">
+                        {producto}
+                        </div>
 
-                                <div style="font-size:13px; color:#6B7280;">Aliado</div>
-                                <div style="margin-bottom:10px;">
-                                    {aliado}
-                                </div>
+                        <div style="font-size:13px;color:#6B7280;">Aliado</div>
+                        <div style="margin-bottom:10px;">
+                        {aliado}
+                        </div>
 
-                                <div style="font-size:13px; color:#6B7280;">Descripción</div>
-                                <div style="font-size:14px;">
-                                    {descripcion}
-                                </div>
+                        <div style="font-size:13px;color:#6B7280;">Descripción</div>
+                        <div style="font-size:14px;">
+                        {descripcion}
+                        </div>
 
-                            </div>
-                            """,
+                        </div>
+                        """,
                             unsafe_allow_html=True
                         )
 
