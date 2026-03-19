@@ -1244,14 +1244,14 @@ with TAB_CONG:
                 st.info("No hay registros")
             else:
                 df = pd.DataFrame(data)
-###################
+
                 # 🔥 MAPEO DE ASESOR (user_id → alias)
                 ases_map = _get_asesores_map()
                 inv_ases_map = {v: k for k, v in ases_map.items()}
 
                 df["asesor"] = df["asesor_user_id"].map(inv_ases_map)
                 df["asesor"] = df["asesor"].fillna("—")
-#################
+
                 # 🔴 LIMPIEZA
                 df["producto"] = df["producto"].fillna("-")
                 df["aliado"] = df["aliado"].fillna("-")
@@ -1284,7 +1284,10 @@ with TAB_CONG:
                 if filtro_asesor:
                     df_filtrado = df_filtrado[df_filtrado["asesor"].isin(filtro_asesor)]
 
-                # 🔥 COLUMNAS FINALES
+                # 🔴 DF PARA LÓGICA (CON ID)
+                df_logic = df_filtrado.copy()
+
+                # 🟢 DF SOLO VISUAL (SIN ID)
                 df_final = df_filtrado[[
                     "asesor",
                     "producto",
@@ -1293,9 +1296,6 @@ with TAB_CONG:
                     "estado",
                     "atendida_at"
                 ]].copy()
-
-                df_final["id_hidden"] = df_filtrado["id"].values
-                
 
                 df_final = df_final.rename(columns={
                     "asesor": "Asesor",
@@ -1314,17 +1314,17 @@ with TAB_CONG:
                 edited_df = st.data_editor(
                     df_final,
                     use_container_width=True,
-                    num_rows="dynamic",
                     column_config={
                         "Eliminar": st.column_config.CheckboxColumn("Eliminar")
                     },
-                    disabled=["Producto", "Aliado", "Descripción", "Estado", "Fecha"]
+                    disabled=["Asesor", "Producto", "Aliado", "Descripción", "Estado", "Fecha"]
                 )
 
-                # 🔴 BORRAR SELECCIONADOS
-                eliminar_ids = edited_df[edited_df["Eliminar"] == True]["id_hidden"].tolist()
+                # 🔴 OBTENER IDS A BORRAR (USANDO ÍNDICES)
+                rows_to_delete = edited_df[edited_df["Eliminar"] == True].index
+                eliminar_ids = df_logic.loc[rows_to_delete, "id"].tolist()
 
-
+                # 🔴 BORRAR
                 if eliminar_ids:
                     if st.button("🗑️ Eliminar seleccionados"):
                         try:
@@ -1342,7 +1342,6 @@ with TAB_CONG:
 
                         except Exception as e:
                             st.error(f"Error al eliminar: {e}")
-
 #################
 
         st.subheader("Resumen por asesor")
