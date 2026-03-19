@@ -1197,18 +1197,18 @@ with TAB_CONG:
                 ["Divisas","Inversiones","Factoraje","Arrendamiento","TPV","Crédito TPV","Créditos"]
             )
 
-            titulo = st.text_input("Título de la oportunidad")
+            aliado = st.text_input("Aliado")
             descripcion = st.text_area("Descripción")
 
             if st.button("Crear oportunidad", type="primary"):
-                if not titulo.strip():
-                    st.warning("El título es obligatorio.")
+                if not aliado.strip():
+                    st.warning("Ingresa el aliado.")
                 else:
                     payload = {
                         "asesor_user_id": ases_map[asesor_sel],
                         "asesor_alias": asesor_sel,
                         "producto": producto,
-                        "titulo": titulo.strip(),
+                        "aliado": aliado.strip(),
                         "descripcion": descripcion.strip() or None,
                         "creada_por": user.id
                     }
