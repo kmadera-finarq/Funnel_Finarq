@@ -1294,6 +1294,9 @@ with TAB_CONG:
                     "atendida_at"
                 ]].copy()
 
+                df_final["id_hidden"] = df_filtrado["id"].values
+                
+
                 df_final = df_final.rename(columns={
                     "asesor": "Asesor",
                     "producto": "Producto",
@@ -1319,7 +1322,8 @@ with TAB_CONG:
                 )
 
                 # 🔴 BORRAR SELECCIONADOS
-                eliminar_ids = edited_df[edited_df["Eliminar"] == True]["id"].tolist()
+                eliminar_ids = edited_df[edited_df["Eliminar"] == True]["id_hidden"].tolist()
+
 
                 if eliminar_ids:
                     if st.button("🗑️ Eliminar seleccionados"):
