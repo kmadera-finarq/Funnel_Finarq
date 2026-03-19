@@ -539,9 +539,9 @@ with TAB_INDIV:
                     col = cols[i % 3]
 
                     with col:
-                        producto = str(op.get('producto', ''))
-                        aliado = str(op.get('aliado', ''))
-                        descripcion = str(op.get('descripcion', ''))
+                        producto = op.get('producto') or "-"
+                        aliado = op.get('aliado') or "-"
+                        descripcion = op.get('descripcion') or "-"
 
                         st.markdown(
                             f"""
