@@ -1286,7 +1286,6 @@ with TAB_CONG:
 
                 # 🔥 COLUMNAS FINALES
                 df_final = df_filtrado[[
-                    "id",
                     "asesor",
                     "producto",
                     "aliado",
