@@ -584,7 +584,77 @@ with TAB_INDIV:
                             except Exception as e:
                                 st.error(f"No se pudo actualizar: {e}")
                 
+         # 🔴 HISTORIAL SOLO ADMIN
+        if ADMIN_FLAG_GLOBAL:
 
+            st.markdown("## 🕘 Historial de oportunidades")
+
+            def _load_historial():
+                try:
+                    _attach_postgrest_token_if_any()
+
+                    def _call():
+                        return supabase.table("oportunidades_admin") \
+                            .select("*") \
+                            .eq("atendida", True) \
+                            .order("atendida_at", desc=True) \
+                            .execute()
+
+                    res = _retry_on_jwt_expired(_call)
+
+                    if hasattr(res, "data"):
+                        return res.data or []
+
+                    return []
+
+                except:
+                    return []
+
+            historial = _load_historial()
+
+            if not historial:
+                st.info("No hay historial aún")
+
+            else:
+                cols = st.columns(3)
+
+                for i, op in enumerate(historial):
+                    col = cols[i % 3]
+
+                    with col:
+                        producto = op.get('producto') or "-"
+                        aliado = op.get('aliado') or "-"
+                        descripcion = op.get('descripcion') or "-"
+
+                        fecha = (op.get("atendida_at") or "")[:10]
+
+                        st.markdown(
+        f"""
+        <div style="background-color:#F3F4F6;padding:18px;border-radius:12px;margin-bottom:15px;box-shadow:0 2px 6px rgba(0,0,0,0.04);height:200px;opacity:0.9;">
+
+        <div style="font-size:13px;color:#6B7280;">Producto</div>
+        <div style="font-weight:600;margin-bottom:10px;">
+        {producto}
+        </div>
+
+        <div style="font-size:13px;color:#6B7280;">Aliado</div>
+        <div style="margin-bottom:10px;">
+        {aliado}
+        </div>
+
+        <div style="font-size:13px;color:#6B7280;">Descripción</div>
+        <div style="font-size:14px;margin-bottom:8px;">
+        {descripcion}
+        </div>
+
+        <div style="font-size:12px;color:#9CA3AF;">
+        Atendida: {fecha}
+        </div>
+
+        </div>
+        """,
+                            unsafe_allow_html=True
+                        )
 
 
         st.subheader("Captura de registro")
