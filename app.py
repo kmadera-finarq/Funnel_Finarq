@@ -1244,7 +1244,14 @@ with TAB_CONG:
                 st.info("No hay registros")
             else:
                 df = pd.DataFrame(data)
+###################
+                # 🔥 MAPEO DE ASESOR (user_id → alias)
+                ases_map = _get_asesores_map()
+                inv_ases_map = {v: k for k, v in ases_map.items()}
 
+                df["asesor"] = df["asesor_user_id"].map(inv_ases_map)
+                df["asesor"] = df["asesor"].fillna("—")
+#################
                 # 🔴 LIMPIEZA
                 df["producto"] = df["producto"].fillna("-")
                 df["aliado"] = df["aliado"].fillna("-")
@@ -1265,7 +1272,7 @@ with TAB_CONG:
                 with col2:
                     filtro_asesor = st.multiselect(
                         "Filtrar por asesor",
-                        options=sorted(df["asesor_user_id"].dropna().unique())
+                        options=sorted(df["asesor"].dropna().unique())
                     )
 
                 # 🔽 APLICAR FILTROS
@@ -1275,11 +1282,12 @@ with TAB_CONG:
                     df_filtrado = df_filtrado[df_filtrado["producto"].isin(filtro_producto)]
 
                 if filtro_asesor:
-                    df_filtrado = df_filtrado[df_filtrado["asesor_user_id"].isin(filtro_asesor)]
+                    df_filtrado = df_filtrado[df_filtrado["asesor"].isin(filtro_asesor)]
 
                 # 🔥 COLUMNAS FINALES
                 df_final = df_filtrado[[
                     "id",
+                    "asesor",
                     "producto",
                     "aliado",
                     "descripcion",
@@ -1288,6 +1296,7 @@ with TAB_CONG:
                 ]].copy()
 
                 df_final = df_final.rename(columns={
+                    "asesor": "Asesor",
                     "producto": "Producto",
                     "aliado": "Aliado",
                     "descripcion": "Descripción",
