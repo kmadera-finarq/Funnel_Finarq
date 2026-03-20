@@ -543,29 +543,20 @@ with TAB_INDIV:
                         aliado = op.get('aliado') or "-"
                         descripcion = op.get('descripcion') or "-"
 
-                        st.markdown(
-                            f"""
-                        <div style="background-color:#EEF4FF;padding:18px;border-radius:12px;margin-bottom:15px;box-shadow:0 2px 8px rgba(0,0,0,0.05);height:180px;">
-
+                        st.markdown(f"""
+                        <div style="background-color:#EEF4FF;padding:18px;border-radius:12px;margin-bottom:15px;box-shadow:0 2px 8px rgba(0,0,0,0.05);">
+                        
                         <div style="font-size:13px;color:#6B7280;">Producto</div>
-                        <div style="font-weight:600;margin-bottom:10px;">
-                        {producto}
-                        </div>
-
+                        <div style="font-weight:600;margin-bottom:10px;">{producto}</div>
+                        
                         <div style="font-size:13px;color:#6B7280;">Aliado</div>
-                        <div style="margin-bottom:10px;">
-                        {aliado}
-                        </div>
-
+                        <div style="margin-bottom:10px;">{aliado}</div>
+                        
                         <div style="font-size:13px;color:#6B7280;">Descripción</div>
-                        <div style="font-size:14px;">
-                        {descripcion}
+                        <div style="font-size:14px;">{descripcion.replace("\n","<br>")}</div>
+                        
                         </div>
-
-                        </div>
-                        """,
-                            unsafe_allow_html=True
-                        )
+                        """, unsafe_allow_html=True)
 
                         completado = st.checkbox("✔ Atendida", key=f"op_{op.get('id', i)}")
 
